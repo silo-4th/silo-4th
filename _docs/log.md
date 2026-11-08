@@ -78,3 +78,4 @@
 | 2026-11-07 | `wiki/quiz-formats.md`에서 객관식 `misconception`을 빼고 `keyPoints` 검사 기준을 더했다 | `misconception`은 쓰는 곳이 없어 타입과 TC-103에서 뺐다. TC-128에 `keyPoints` 통과, 실패 조건을 넣었다 | `output/2026-11-05-quiz-schema.md`에 `misconception`이 남아 있음 |
 | 2026-11-07 | ADR `0010-quiz-free-grading.md` 결정 3, 4, 5와 `wiki/dev-rules.md`, `wiki/quiz-formats.md`를 고쳤다 | 4-87 PR 1에서 서술형 판정을 맞음과 틀림으로 줄여 `is_correct`에 남기고, 잘 모르겠어요를 확신도 `guess`의 틀림으로 남기게 했다. 지울 컬럼은 코드에서만 뺐다 | 컬럼 삭제와 `partial` 데이터 옮기기는 마이그레이션 PR에서 해야 함 |
 | 2026-11-07 | `wiki/quiz-formats.md`와 ADR `0010-quiz-free-grading.md`에 마이그레이션 `0006` 결과를 적었다 | 4-87 PR 1 배포 뒤 지울 컬럼의 데이터를 `is_correct`, `confidence`, `stem`으로 옮기고 컬럼을 지웠다 | 운영 적용은 `main` 배포 때 확인 필요 |
+| 2026-11-08 | ADR `0011-default-quiz-problems.md`를 만들고 `wiki/dev-rules.md`에 반영했다 | 4-90에서 기본 문제의 원본을 TS 모듈로 두고, 바꿀 때마다 내용 해시를 ID로 쓰는 새 마이그레이션으로 교체하기로 했다. 퀴즈 생성 통합 테스트는 마이그레이션이 넣은 기본 문제를 쓴다 | 기본 문제 정답 검수는 4-14에서 확인 필요 |
