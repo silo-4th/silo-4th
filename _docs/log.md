@@ -79,3 +79,4 @@
 | 2026-11-07 | ADR `0010-quiz-free-grading.md` 결정 3, 4, 5와 `wiki/dev-rules.md`, `wiki/quiz-formats.md`를 고쳤다 | 4-87 PR 1에서 서술형 판정을 맞음과 틀림으로 줄여 `is_correct`에 남기고, 잘 모르겠어요를 확신도 `guess`의 틀림으로 남기게 했다. 지울 컬럼은 코드에서만 뺐다 | 컬럼 삭제와 `partial` 데이터 옮기기는 마이그레이션 PR에서 해야 함 |
 | 2026-11-07 | `wiki/quiz-formats.md`와 ADR `0010-quiz-free-grading.md`에 마이그레이션 `0006` 결과를 적었다 | 4-87 PR 1 배포 뒤 지울 컬럼의 데이터를 `is_correct`, `confidence`, `stem`으로 옮기고 컬럼을 지웠다 | 운영 적용은 `main` 배포 때 확인 필요 |
 | 2026-11-08 | ADR `0011-default-quiz-problems.md`를 만들고 `wiki/dev-rules.md`에 반영했다 | 4-90에서 기본 문제의 원본을 TS 모듈로 두고, 바꿀 때마다 내용 해시를 ID로 쓰는 새 마이그레이션으로 교체하기로 했다. 퀴즈 생성 통합 테스트는 마이그레이션이 넣은 기본 문제를 쓴다 | 기본 문제 정답 검수는 4-14에서 확인 필요 |
+| 2026-11-09 | ADR `0012-single-concept-classification.md`를 만들고 ADR `0008`, `wiki/dev-rules.md`, `wiki/question-concepts-summary.md`에 반영했다 | 4-95에서 질문 하나에 개념 하나만 저장하고, 분류 프롬프트에 개념별 한 줄 정리를 붙이기로 했다. TC-61을 폐기하고 TC-180으로 대신했다 | 평가 저장소의 `prompts/baseline.json` 갱신과 4-97 재측정 확인 필요 |
