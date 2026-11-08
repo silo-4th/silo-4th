@@ -1,12 +1,10 @@
 import "server-only";
-import type { QUIZ_FORMATS } from "@/lib/db/schema";
+import type { QuizFormat } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { askJson } from "./ask-json";
 
 // 학습자는 문제가 뜰 때까지 기다린다. 추정값이라 실제 생성 시간을 재서 조정한다.
 export const QUIZ_GENERATION_TIMEOUT_MS = 30_000;
-
-export type QuizFormat = (typeof QUIZ_FORMATS)[number];
 
 // 퀴즈 탭은 이 단원 질문의 요약을, 관련 문제 풀어보기는 그 질문 하나의 원문을 넘긴다.
 export type GenerationContext =
