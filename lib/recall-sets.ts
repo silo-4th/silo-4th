@@ -1,0 +1,109 @@
+import "server-only";
+import { captureException } from "@sentry/nextjs";
+import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { safeMessage } from "@/lib/auth/sentry-logger";
+import { getDb } from "@/lib/db";
+import { concept, quizProblem, type RECALL_REASONS, recallItem, recallSet } from "@/lib/db/schema";
+import { env } from "@/lib/env";
+import { type ProblemView, problemViewColumns, toProblemView } from "@/lib/quiz-problems";
+import { studyDay } from "@/lib/study-day";
+
+export const RECALL_EVENTS = ["postpone", "start", "complete"] as const;
+export type RecallEvent = (typeof RECALL_EVENTS)[number];
+
+export type RecallSetView = {
+  id: string;
+  items: { id: string; position: number; reason: (typeof RECALL_REASONS)[number]; problem: ProblemView }[];
+};
+
+export type Recorded = "recorded" | "unknown" | "not-yours";
+export type EventOutcome = Recorded | "out-of-order";
+
+type SetTimes = Pick<typeof recallSet.$inferSelect, "shownAt" | "postponedAt" | "startedAt" | "completedAt">;
+
+// 세트 상태는 채워진 마지막 시각이다. 기록마다 채울 컬럼과 그 기록을 받을 수 있는 상태를 둔다.
+// 마친 세트는 시작 시각도 있으므로, 시작을 다시 보내면 같은 기록으로 본다.
+const EVENT_RULES: Record<RecallEvent, { column: keyof SetTimes; accepts: (set: SetTimes) => boolean }> = {
+  postpone: { column: "postponedAt", accepts: (set) => set.shownAt !== null && set.startedAt === null },
+  start: { column: "startedAt", accepts: (set) => set.shownAt !== null },
+  complete: { column: "completedAt", accepts: (set) => set.startedAt !== null },
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function isRecallEvent(value: unknown): value is RecallEvent {
+  return RECALL_EVENTS.some((event) => event === value);
+}
+
+// 운영이 아닌 환경에서는 하루를 당겨, 오늘 기록으로 만든 세트를 다음 날까지 기다리지 않고 확인할 수 있게 한다.
+export function recallToday(advanceDay: boolean, now = new Date()) {
+  const advance = advanceDay && env.VERCEL_ENV !== "production";
+  return studyDay(advance ? new Date(now.getTime() + DAY_MS) : now);
+}
+
+// 기준일이 오늘보다 앞선 세트 가운데 가장 최근 것 하나만 띄운다. 그 세트를 이미 띄웠으면 더 오래된 세트로 넘어가지 않는다.
+// 띄운 시각은 비어 있을 때만 채워서, 동시에 온 요청 중 하나만 세트를 받는다.
+// 문항을 읽다 실패하면 띄운 시각도 되돌려, 다시 요청했을 때 그 세트를 받을 수 있게 한다.
+export async function showTodaySet(learnerId: string, today: string): Promise<RecallSetView | null> {
+  return getDb().transaction(async (tx) => {
+    const latest = tx
+      .select({ id: recallSet.id })
+      .from(recallSet)
+      .where(and(eq(recallSet.learnerId, learnerId), lt(recallSet.sourceStudyDay, today)))
+      .orderBy(desc(recallSet.sourceStudyDay))
+      .limit(1);
+    const [shown] = await tx
+      .update(recallSet)
+      .set({ shownAt: new Date() })
+      .where(and(inArray(recallSet.id, latest), isNull(recallSet.shownAt)))
+      .returning({ id: recallSet.id });
+    if (!shown) return null;
+
+    const items = await tx
+      .select({ id: recallItem.id, position: recallItem.position, reason: recallItem.reason, problem: problemViewColumns })
+      .from(recallItem)
+      .innerJoin(quizProblem, eq(quizProblem.id, recallItem.problemId))
+      .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+      .where(eq(recallItem.setId, shown.id))
+      .orderBy(asc(recallItem.position));
+    return { id: shown.id, items: items.map((item) => ({ ...item, problem: toProblemView(item.problem) })) };
+  });
+}
+
+// 같은 기록이 다시 오면 처음 시각을 그대로 둔다. 세트를 잠그고 상태를 읽어, 동시에 온 기록이 순서를 건너뛰지 못하게 한다.
+export async function recordSetEvent(learnerId: string, setId: string, event: RecallEvent): Promise<EventOutcome> {
+  return getDb().transaction(async (tx) => {
+    const [set] = await tx.select().from(recallSet).where(eq(recallSet.id, setId)).for("update");
+    if (!set) return "unknown";
+    if (set.learnerId !== learnerId) return "not-yours";
+    const { column, accepts } = EVENT_RULES[event];
+    if (set[column] !== null) return "recorded";
+    if (!accepts(set)) return "out-of-order";
+    await tx
+      .update(recallSet)
+      .set({ [column]: new Date() })
+      .where(eq(recallSet.id, setId));
+    return "recorded";
+  });
+}
+
+// 결과에서 문항의 절로 처음 이동한 시각만 남긴다.
+export async function markSectionOpened(learnerId: string, itemId: string): Promise<Recorded> {
+  const db = getDb();
+  const [item] = await db
+    .select({ learnerId: recallSet.learnerId })
+    .from(recallItem)
+    .innerJoin(recallSet, eq(recallSet.id, recallItem.setId))
+    .where(eq(recallItem.id, itemId));
+  if (!item) return "unknown";
+  if (item.learnerId !== learnerId) return "not-yours";
+  await db
+    .update(recallItem)
+    .set({ openedSectionAt: new Date() })
+    .where(and(eq(recallItem.id, itemId), isNull(recallItem.openedSectionAt)));
+  return "recorded";
+}
+
+export function reportRecallError(error: unknown) {
+  captureException(new Error(safeMessage(error, "recall-sets")));
+}

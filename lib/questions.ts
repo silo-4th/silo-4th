@@ -23,6 +23,7 @@ import { classifyQuestion, summarizeQuestion } from "@/lib/llm/tagging";
 import { type SessionSummary, type SessionTurn, toSessionList } from "@/lib/question-sessions";
 import { knownConceptIds, normalizeKeywords } from "@/lib/question-tags";
 import { studyDay } from "@/lib/study-day";
+import { isUuid } from "@/lib/uuid";
 
 export type AskInput = { questionId: string; sessionId: string; unitId: string; content: string };
 
@@ -40,7 +41,6 @@ export function reportQuestionError(error: unknown) {
   captureException(new Error(safeMessage(error, "questions")));
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // 질문은 그대로 저장하고 AI에게도 넘기므로, 화면을 거치지 않고 아주 긴 글을 보내지 못하게 막는다.
 const MAX_QUESTION_LENGTH = 4000;
 // 질문이 쌓여도 답변 프롬프트가 길어지지 않게, 과거 요약은 최근 것부터 이만큼만 넘긴다.
@@ -50,8 +50,7 @@ const PAST_SUMMARY_LIMIT = 5;
 export function parseAskInput(input: unknown): AskInput | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const { questionId, sessionId, unitId, content } = input as Record<string, unknown>;
-  if (typeof questionId !== "string" || !UUID.test(questionId)) return undefined;
-  if (typeof sessionId !== "string" || !UUID.test(sessionId)) return undefined;
+  if (!isUuid(questionId) || !isUuid(sessionId)) return undefined;
   if (typeof unitId !== "string" || typeof content !== "string") return undefined;
   if (!content.trim() || content.length > MAX_QUESTION_LENGTH) return undefined;
   return { questionId, sessionId, unitId, content };
@@ -312,7 +311,7 @@ export async function listSessions(learnerId: string): Promise<SessionSummary[]>
 
 // 학습자의 세션이 아니면 undefined를 돌려준다. 세션 ID는 주소에서 오므로 아무 값이나 올 수 있다.
 export async function sessionTurns(learnerId: string, sessionId: string): Promise<SessionTurn[] | undefined> {
-  if (!UUID.test(sessionId)) return undefined;
+  if (!isUuid(sessionId)) return undefined;
   const db = getDb();
   const [owned] = await db
     .select({ id: questionSession.id })
