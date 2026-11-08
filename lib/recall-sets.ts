@@ -43,29 +43,31 @@ export function recallToday(advanceDay: boolean, now = new Date()) {
 
 // 기준일이 오늘보다 앞선 세트 가운데 가장 최근 것 하나만 띄운다. 그 세트를 이미 띄웠으면 더 오래된 세트로 넘어가지 않는다.
 // 띄운 시각은 비어 있을 때만 채워서, 동시에 온 요청 중 하나만 세트를 받는다.
+// 문항을 읽다 실패하면 띄운 시각도 되돌려, 다시 요청했을 때 그 세트를 받을 수 있게 한다.
 export async function showTodaySet(learnerId: string, today: string): Promise<RecallSetView | null> {
-  const db = getDb();
-  const latest = db
-    .select({ id: recallSet.id })
-    .from(recallSet)
-    .where(and(eq(recallSet.learnerId, learnerId), lt(recallSet.sourceStudyDay, today)))
-    .orderBy(desc(recallSet.sourceStudyDay))
-    .limit(1);
-  const [shown] = await db
-    .update(recallSet)
-    .set({ shownAt: new Date() })
-    .where(and(inArray(recallSet.id, latest), isNull(recallSet.shownAt)))
-    .returning({ id: recallSet.id });
-  if (!shown) return null;
+  return getDb().transaction(async (tx) => {
+    const latest = tx
+      .select({ id: recallSet.id })
+      .from(recallSet)
+      .where(and(eq(recallSet.learnerId, learnerId), lt(recallSet.sourceStudyDay, today)))
+      .orderBy(desc(recallSet.sourceStudyDay))
+      .limit(1);
+    const [shown] = await tx
+      .update(recallSet)
+      .set({ shownAt: new Date() })
+      .where(and(inArray(recallSet.id, latest), isNull(recallSet.shownAt)))
+      .returning({ id: recallSet.id });
+    if (!shown) return null;
 
-  const items = await db
-    .select({ id: recallItem.id, position: recallItem.position, reason: recallItem.reason, problem: problemViewColumns })
-    .from(recallItem)
-    .innerJoin(quizProblem, eq(quizProblem.id, recallItem.problemId))
-    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
-    .where(eq(recallItem.setId, shown.id))
-    .orderBy(asc(recallItem.position));
-  return { id: shown.id, items: items.map((item) => ({ ...item, problem: toProblemView(item.problem) })) };
+    const items = await tx
+      .select({ id: recallItem.id, position: recallItem.position, reason: recallItem.reason, problem: problemViewColumns })
+      .from(recallItem)
+      .innerJoin(quizProblem, eq(quizProblem.id, recallItem.problemId))
+      .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+      .where(eq(recallItem.setId, shown.id))
+      .orderBy(asc(recallItem.position));
+    return { id: shown.id, items: items.map((item) => ({ ...item, problem: toProblemView(item.problem) })) };
+  });
 }
 
 // 같은 기록이 다시 오면 처음 시각을 그대로 둔다. 세트를 잠그고 상태를 읽어, 동시에 온 기록이 순서를 건너뛰지 못하게 한다.
