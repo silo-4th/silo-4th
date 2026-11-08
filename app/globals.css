@@ -12,6 +12,24 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* 디자인 시안 silo-4th-design의 src/styles.css 토큰을 같은 이름으로 옮겼다. */
+@theme {
+  --color-green: #2fc287;
+  --color-green-600: #1fa36e;
+  --color-green-50: #e3f7ee;
+  --color-green-25: #f5fcf9;
+  --color-ink: #1b1c1d;
+  --color-ink-2: #3e4042;
+  --color-gray: #6a7077;
+  --color-gray-3: #abb0b5;
+  --color-line: #e4e6e8;
+  --color-line-2: #eff1f3;
+  --color-bg: #f8f9fa;
+  --color-red: #e5503c;
+  --color-red-50: #fdeeec;
+  --color-amber-50: #fff6e0;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;

@@ -1,0 +1,243 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { AttemptInput } from "@/lib/quiz-attempts";
+import { resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
+import {
+  MAX_ANSWER_LENGTH,
+  type ProblemStage,
+  type QuizFlow,
+  type QuizFlowEvent,
+  advanceQuizFlow,
+  canSubmit,
+  startQuizFlow,
+} from "@/lib/quiz-flow";
+import type { ProblemView } from "@/lib/quiz-problems";
+
+type Confidence = NonNullable<AttemptInput["confidence"]>;
+
+const CONFIDENCES: { value: Confidence; label: string }[] = [
+  { value: "sure", label: "확실해요" },
+  { value: "unsure", label: "애매해요" },
+  { value: "guess", label: "찍었어요" },
+];
+
+const CONFIDENCE_QUESTION: Record<ProblemView["format"], string> = {
+  mcq: "고른 답, 얼마나 확실해요?",
+  blank: "쓴 답, 얼마나 확실해요?",
+  free: "쓴 설명, 얼마나 확실해요?",
+};
+
+const LETTERS = ["A", "B", "C", "D"];
+
+// 퀴즈 탭과 꺼내 먹기가 함께 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
+export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: () => void }) {
+  const [flow, setFlow] = useState<QuizFlow>(() => startQuizFlow(problem));
+  const dispatch = (...events: QuizFlowEvent[]) => setFlow((current) => events.reduce(advanceQuizFlow, current));
+
+  const grading = flow.stage === "grading" ? flow : undefined;
+  useEffect(() => {
+    if (!grading) return;
+    let active = true;
+    void sendAttempt(grading.request).then((result) => {
+      if (!active) return;
+      setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
+    });
+    return () => {
+      active = false;
+    };
+  }, [grading]);
+
+  function next() {
+    dispatch({ type: "next" });
+    onNext();
+  }
+
+  return (
+    <section aria-label="퀴즈" className="flex flex-col bg-white text-ink">
+      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
+        <span className="inline-flex h-5.5 items-center rounded bg-line-2 px-2 text-xs font-semibold text-ink-2">
+          {problem.conceptTitle}
+        </span>
+        {flow.stage === "problem" && !flow.hintUsed && (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "show-hint" })}
+            className="ml-auto h-5.5 text-[12.5px] font-medium text-gray hover:text-ink-2"
+          >
+            힌트
+          </button>
+        )}
+      </div>
+      <div className="unit-body text-[17px] leading-normal font-bold [&_pre]:text-[13px] [&_pre]:font-normal [&>:last-child]:mb-0">
+        <Markdown remarkPlugins={[remarkGfm]}>{problem.format === "blank" ? shownStem(problem.stem) : problem.stem}</Markdown>
+      </div>
+      {flow.stage === "problem" && flow.hintUsed && (
+        <p className="mt-2.5 rounded-md bg-amber-50 px-3 py-2.5 text-[13px] text-[#7a4b00]">
+          <b>힌트</b> {problem.hint}
+        </p>
+      )}
+      {flow.stage === "problem" && <Answering problem={problem} flow={flow} dispatch={dispatch} />}
+      {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
+      <p role="status" className="mt-3.5 text-[13px] text-gray empty:mt-0">
+        {flow.stage === "grading" ? "채점하고 있어요" : ""}
+      </p>
+      {flow.stage === "grading-failed" && (
+        <div className="mt-3.5 space-y-3">
+          <p role="alert" className="text-[13px] font-bold text-red">
+            채점 결과를 받지 못했어요
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => dispatch({ type: "retry" })} className={BUTTON}>
+              다시 시도
+            </button>
+            <button type="button" onClick={next} className={BUTTON}>
+              다음 문제로
+            </button>
+          </div>
+        </div>
+      )}
+      {flow.stage === "explanation" && (
+        <Explanation format={problem.format} {...resultView(flow.submitted, flow.result)} explanation={flow.result.explanation} onNext={next} />
+      )}
+    </section>
+  );
+}
+
+const BUTTON = "h-9 rounded-md border border-line bg-white px-3.5 text-sm font-semibold hover:bg-bg";
+
+function Answering({
+  problem,
+  flow,
+  dispatch,
+}: {
+  problem: ProblemView;
+  flow: ProblemStage;
+  dispatch: (...events: QuizFlowEvent[]) => void;
+}) {
+  const ready = canSubmit(flow);
+  return (
+    <>
+      {problem.format === "mcq" && (
+        <fieldset className="mt-3 flex flex-col gap-2">
+          <legend className="sr-only">보기</legend>
+          {(problem.choices ?? []).map((choice, index) => {
+            const picked = flow.chosenIndex === index;
+            return (
+              <label
+                key={index}
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-white px-3.5 py-3 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-gray-3 has-checked:border-ink has-focus-visible:outline-2 has-focus-visible:outline-green"
+              >
+                <input
+                  type="radio"
+                  name={`choice-${problem.id}`}
+                  checked={picked}
+                  onChange={() => dispatch({ type: "choose", index })}
+                  className="sr-only"
+                />
+                <span
+                  aria-hidden
+                  className={`grid size-5.5 flex-none place-items-center rounded-full text-[11px] font-bold ${picked ? "bg-ink text-white" : "bg-line-2 text-gray"}`}
+                >
+                  {LETTERS[index]}
+                </span>
+                {choice}
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
+      {problem.format === "blank" && (
+        <input
+          aria-label="빈칸에 들어갈 말"
+          placeholder="빈칸에 들어갈 말"
+          maxLength={MAX_ANSWER_LENGTH}
+          value={flow.text}
+          onChange={(event) => dispatch({ type: "write", text: event.target.value })}
+          className="mt-3 h-11 w-full rounded-md border border-line bg-white px-3 text-[15px] focus:border-green focus:outline-none"
+        />
+      )}
+      {problem.format === "free" && (
+        <>
+          <textarea
+            aria-label="설명"
+            placeholder="핵심 개념을 넣어 내 말로 설명해 보세요"
+            maxLength={MAX_ANSWER_LENGTH}
+            value={flow.text}
+            onChange={(event) => dispatch({ type: "write", text: event.target.value })}
+            className="mt-3 block h-23 w-full resize-none overflow-y-auto rounded-md border border-line bg-white px-3.5 py-3 text-sm leading-relaxed focus:border-green focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "dont-know" })}
+            className="mt-2 self-start text-[13px] font-medium text-gray hover:text-ink-2"
+          >
+            잘 모르겠어요
+          </button>
+        </>
+      )}
+      {/* 시안처럼 확신도 버튼이 답 내기를 겸한다. */}
+      <div
+        role="group"
+        aria-label="확신도"
+        className={`mt-3.5 flex flex-wrap items-center gap-1.5 gap-y-2 transition-opacity ${ready ? "" : "opacity-40"}`}
+      >
+        <span className="basis-full text-[13px] font-bold">{CONFIDENCE_QUESTION[problem.format]}</span>
+        {CONFIDENCES.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            disabled={!ready}
+            onClick={() => dispatch({ type: "submit" }, { type: "pick-confidence", confidence: value })}
+            className="h-7.5 rounded-full border border-line bg-white px-3 text-[13px] font-semibold text-ink-2 enabled:hover:border-gray-3"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Explanation({
+  format,
+  verdict,
+  correctAnswers,
+  myAnswer,
+  explanation,
+  onNext,
+}: ReturnType<typeof resultView> & { format: ProblemView["format"]; explanation: string; onNext: () => void }) {
+  const right = verdict === "맞았어요";
+  return (
+    <>
+      <dl className="mt-3 flex flex-col gap-2 text-sm">
+        <div
+          className={`rounded-lg border px-3.5 py-3 ${verdict === null ? "border-line" : right ? "border-green bg-green-25" : "border-red bg-red-50"}`}
+        >
+          <dt className="text-xs font-semibold text-gray">내 답</dt>
+          <dd className="mt-1 whitespace-pre-wrap">{myAnswer}</dd>
+        </div>
+        <div className="rounded-lg border border-green bg-green-25 px-3.5 py-3">
+          <dt className="text-xs font-semibold text-gray">{format === "free" ? "모범 답안" : "정답"}</dt>
+          <dd className="mt-1 whitespace-pre-wrap">{correctAnswers.join(", ")}</dd>
+        </div>
+      </dl>
+      <div className="mt-2.5 rounded-md bg-bg px-4 py-3.5 text-[13px] text-ink-2">
+        {verdict && (
+          <p className={`mb-1.5 text-[15px] font-bold ${right ? "text-green-600" : "text-red"}`}>
+            <span aria-hidden>{right ? "✓ " : "✕ "}</span>
+            {verdict}
+          </p>
+        )}
+        <div className="unit-body">
+          <Markdown remarkPlugins={[remarkGfm]}>{explanation}</Markdown>
+        </div>
+      </div>
+      <button type="button" onClick={onNext} className="mt-6 h-11 w-full rounded-md bg-ink text-[15px] font-semibold text-white hover:bg-black">
+        다음 문제
+      </button>
+    </>
+  );
+}
