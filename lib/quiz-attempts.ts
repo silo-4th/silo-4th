@@ -17,6 +17,7 @@ import {
 } from "@/lib/quiz-grading";
 import { MAX_ANSWER_LENGTH } from "@/lib/quiz-flow";
 import { studyDay } from "@/lib/study-day";
+import { isUuid } from "@/lib/uuid";
 
 type Confidence = (typeof CONFIDENCES)[number];
 
@@ -42,8 +43,6 @@ export type Submission =
   | { kind: "unknown-problem" }
   | { kind: "not-yours" };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // 학습자의 답은 쿼리 값으로 오류 메시지에 담긴다. 값을 지운 메시지만 Sentry로 보낸다.
 export function reportQuizError(error: unknown) {
   captureException(new Error(safeMessage(error, "quiz-attempts")));
@@ -60,8 +59,7 @@ export function parseAttemptInput(input: unknown): AttemptInput | undefined {
     string,
     unknown
   >;
-  if (typeof attemptId !== "string" || !UUID.test(attemptId)) return undefined;
-  if (typeof problemId !== "string" || !UUID.test(problemId)) return undefined;
+  if (!isUuid(attemptId) || !isUuid(problemId)) return undefined;
   const isIndex = typeof chosenIndex === "number" && Number.isInteger(chosenIndex) && chosenIndex >= 0;
   // 비어 있는 답 칸은 빼고 보내도, null로 보내도 같게 본다.
   if (chosenIndex != null && !isIndex) return undefined;

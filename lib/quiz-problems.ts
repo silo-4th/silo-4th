@@ -28,6 +28,7 @@ import {
   generateQuizProblem,
 } from "@/lib/llm/quiz-generation";
 import { parseQuizProblem } from "@/lib/quiz-problem";
+import { isUuid } from "@/lib/uuid";
 
 // 퀴즈 탭은 열어 둔 단원으로, 관련 문제 풀어보기는 그 질문으로 부른다.
 export type ProblemRequest =
@@ -52,7 +53,6 @@ export type Creation =
 
 type Concept = { id: string; title: string };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SUMMARY_LIMIT = 5;
 
 export function reportQuizProblemError(error: unknown) {
@@ -65,7 +65,7 @@ export function parseProblemRequest(
 ): ProblemRequest | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const { unitId, questionId } = input as Record<string, unknown>;
-  if (typeof questionId === "string" && UUID.test(questionId))
+  if (isUuid(questionId))
     return { kind: "question", questionId };
   if (questionId !== undefined) return undefined;
   if (typeof unitId === "string" && unitId) return { kind: "unit", unitId };
