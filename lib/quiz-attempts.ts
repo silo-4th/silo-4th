@@ -209,6 +209,11 @@ export async function submitAttempt(learnerId: string, input: AttemptInput): Pro
   if (problem.learnerId !== null && problem.learnerId !== learnerId) return { kind: "not-yours" };
   if (input.recallItemId) {
     const refused = await refuseRecallItem(learnerId, input.recallItemId, problem.id);
+    // 처음 확인 뒤에 같은 풀이 ID의 다른 요청이 먼저 저장했으면, 이 요청은 재전송이므로 저장된 결과를 돌려준다.
+    if (refused?.kind === "already-answered") {
+      const saved = await savedAttempt(input.attemptId);
+      if (saved) return replay(saved, learnerId);
+    }
     if (refused) return refused;
   }
   const gradable = toGradable(problem.format, problem.answer);
