@@ -243,18 +243,16 @@ afterEach(async () => {
 });
 
 describe("질문 개념 분류와 요약", () => {
-  it("TC-61 질문을 보내면 AI가 고른 개념이 질문에 연결돼요", async () => {
+  it("TC-180 AI가 개념을 여러 개 골라도 질문에는 목록에 있는 첫 번째 개념 하나만 연결돼요", async () => {
     const { headers } = await loginConsented();
     const { id: unitId } = await firstUnit();
-    const [x, y, z] = await newConcepts(3);
-    aiClassifies([x!, y!]);
+    const [x, y] = await newConcepts(3);
+    aiClassifies([`unknown-${randomUUID()}`, x!, y!]);
     const questionId = newQuestionId();
 
     await events(await ask({ questionId, unitId, content: "개념을 고를 질문" }, headers));
 
-    const linked = await linkedConcepts(questionId);
-    expect(linked.sort()).toEqual([x, y].sort());
-    expect(linked).not.toContain(z);
+    expect(await linkedConcepts(questionId)).toEqual([x]);
   });
 
   it("TC-62 답을 받은 질문에 요약과 키워드가 채워져요", async () => {
