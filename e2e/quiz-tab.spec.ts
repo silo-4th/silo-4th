@@ -183,3 +183,46 @@ test("TC-179 대화한 개념으로 만든 문제를 퀴즈 탭에서 풀면 풀
   await card.getByRole("button", { name: "다음 문제" }).click();
   await expect.poll(() => bodies.length).toBe(2);
 });
+
+test("TC-192 대화 중 관련 문제 풀어보기를 누르면 퀴즈 탭으로 넘어가 로딩 뒤 그 질문으로 만든 문제가 뜨고 카운트는 그대로예요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const questionId = randomUUID();
+  await saveAnswered(
+    learnerId,
+    { questionId, sessionId: randomUUID(), unitId: first.id, content: "GROUP BY 뒤에 조건은 어디에 쓰나요?" },
+    "HAVING에 써요.",
+  );
+
+  const unitProblem = sampleProblem("그룹 조건은 어디에 쓰나요?");
+  const relatedProblem = sampleProblem("HAVING은 WHERE와 무엇이 다른가요?");
+  let releaseRelated: () => void = () => {};
+  const relatedHeld = new Promise<void>((resolve) => {
+    releaseRelated = resolve;
+  });
+  const bodies: unknown[] = [];
+  await page.route(PROBLEMS_PATH, async (route) => {
+    bodies.push(route.request().postDataJSON());
+    if (bodies.length === 1) return route.fulfill({ json: unitProblem });
+    await relatedHeld;
+    return route.fulfill({ json: relatedProblem });
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  await expect(panel.getByText(unitProblem.stem)).toBeVisible();
+  await expect(panel.getByText("1 / 5")).toBeVisible();
+
+  await tab(page, "에이전트").click();
+  await page.getByRole("tabpanel", { name: "에이전트" }).getByRole("button", { name: "관련 문제 풀어보기" }).click();
+
+  await expect(tab(page, "퀴즈")).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByText("문제를 만들고 있어요")).toBeVisible();
+  await expect.poll(() => bodies.length).toBe(2);
+  expect(bodies[1]).toEqual({ questionId });
+
+  releaseRelated();
+  await expect(panel.getByText(relatedProblem.stem)).toBeVisible();
+  await expect(panel.getByText("1 / 5")).toBeVisible();
+});
