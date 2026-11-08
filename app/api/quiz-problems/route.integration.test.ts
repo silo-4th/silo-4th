@@ -391,6 +391,22 @@ async function defaultProblemIds(unitId: string) {
   return rows.map(({ id }) => id).sort();
 }
 
+// 마이그레이션이 넣은 기본 문제를 그대로 쓰므로, 부르기 전에 그 단원에서 낼 수 있는 문제를 읽어 둔다.
+async function activeDefaultProblemIds(unitId: string) {
+  const rows = await getDb()
+    .select({ id: quizProblem.id })
+    .from(quizProblem)
+    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+    .where(
+      and(
+        eq(concept.unitId, unitId),
+        isNull(quizProblem.learnerId),
+        isNull(quizProblem.retiredAt),
+      ),
+    );
+  return rows.map(({ id }) => id).sort();
+}
+
 function allKeys(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(allKeys);
   if (typeof value !== "object" || value === null) return [];
@@ -513,9 +529,8 @@ describe("퀴즈 문제 만들기", () => {
       summary: "다른 단원 요약",
       conceptIds: ["s2-07-1"],
     });
-    const active = await defaultProblems(7);
+    const active = await activeDefaultProblemIds(UNIT_ID);
     const retired = await newProblem("s2-05-1", { retiredAt: new Date() });
-    const otherUnit = await newProblem("s2-07-1");
     const before = await defaultProblemIds(UNIT_ID);
     aiMakesProblems();
 
@@ -524,9 +539,8 @@ describe("퀴즈 문제 만들기", () => {
     );
 
     expect(ai.create).not.toHaveBeenCalled();
-    expect(active.map(({ id }) => id)).toContain(body.id);
+    expect(active).toContain(body.id);
     expect(body.id).not.toBe(retired.id);
-    expect(body.id).not.toBe(otherUnit.id);
     expect(await problemsOf(learnerId)).toEqual([]);
     expect(await defaultProblemIds(UNIT_ID)).toEqual(before);
   });
@@ -865,24 +879,25 @@ describe("퀴즈 문제 만들기", () => {
   });
 
   it("TC-136 기본 문제는 이 학습자가 이미 푼 문제를 빼고 내고, 다 풀었으면 다시 전체에서 내요", async () => {
+    const ids = await activeDefaultProblemIds(UNIT_ID);
+    const [kept, ...rest] = ids;
+    if (!kept || rest.length === 0)
+      throw new Error("s2-05에 기본 문제가 두 개 이상 있어야 한다.");
     const one = await login();
-    const both = await login();
-    const p1 = await newProblem("s2-05-1");
-    const p2 = await newProblem("s2-05-2");
-    await solved(one.learnerId, p1.id);
-    await solved(both.learnerId, p1.id);
-    await solved(both.learnerId, p2.id);
+    const all = await login();
+    for (const id of rest) await solved(one.learnerId, id);
+    for (const id of ids) await solved(all.learnerId, id);
     aiMakesProblems();
 
     const afterOne = await problemIn(
       await generate({ unitId: UNIT_ID }, { headers: one.headers }),
     );
-    const afterBoth = await problemIn(
-      await generate({ unitId: UNIT_ID }, { headers: both.headers }),
+    const afterAll = await problemIn(
+      await generate({ unitId: UNIT_ID }, { headers: all.headers }),
     );
 
-    expect(afterOne.id).toBe(p2.id);
-    expect([p1.id, p2.id]).toContain(afterBoth.id);
+    expect(afterOne.id).toBe(kept);
+    expect(ids).toContain(afterAll.id);
     expect(ai.create).not.toHaveBeenCalled();
   });
 
@@ -916,7 +931,7 @@ describe("퀴즈 문제 만들기", () => {
       unitId: OTHER_UNIT_ID,
       summary: `Q2 요약 ${randomUUID()}`,
     });
-    const fallback = await newProblem("s2-07-1");
+    const fallbacks = await activeDefaultProblemIds(OTHER_UNIT_ID);
     aiMakesProblems();
 
     const made = await problemIn(
@@ -944,7 +959,7 @@ describe("퀴즈 문제 만들기", () => {
     );
 
     expect(ai.create).not.toHaveBeenCalled();
-    expect(given.id).toBe(fallback.id);
+    expect(fallbacks).toContain(given.id);
     expect(await problemsOf(learnerId)).toEqual(rowsAfterQ1);
   });
 });

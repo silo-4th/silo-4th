@@ -38,6 +38,8 @@
 | DB는 `lib/db`의 `getDb()`로만 접근하고, 테이블은 `lib/db/schema.ts`에만 정의한다. 이 모듈을 클라이언트 컴포넌트에서 import하면 빌드가 실패한다 | `lib/db/index.ts` (`server-only`) | [0003](adr/0003-neon-postgres-drizzle.md) |
 | DB 마이그레이션은 Vercel 배포 빌드에서 자동으로 적용한다. 프리뷰는 `preview/<브랜치>`, 운영은 `production` 브랜치에 들어간다. 운영 DB에 손으로 돌리지 않고, 배포와 연결되지 않은 `test`, `vercel-dev`만 손으로 적용한다 | `vercel.json` `buildCommand`, `drizzle.config.ts` | [0009](adr/0009-migrate-on-deploy.md) |
 | 푸시한 마이그레이션은 다시 생성하거나 고치지 않고 새 마이그레이션으로 더한다. 다른 브랜치와 충돌하면 `_journal.json`을 손으로 합치지 않고 내 마이그레이션을 지운 뒤 `npm run db:generate`로 다시 만든다. 마이그레이션은 이전 코드가 새 스키마에서도 돌아가게 만든다 | 코드 리뷰 (기계 검사 없음) | [0009](adr/0009-migrate-on-deploy.md) |
+| 기본 문제의 원본은 `lib/default-quiz-problems.ts` 하나다. 바꿀 때는 이 모듈을 고치고 `npm run quiz:defaults:migration`으로 새 마이그레이션을 만든다. 마이그레이션은 내용 해시를 ID로 써서 같은 문제를 한 벌만 넣고, 모듈에서 빠진 기본 문제는 지우지 않고 `retired_at`으로 내린다 | `lib/default-quiz-problems-sql.ts`, 노션 TC-146, TC-147, TC-149 | [0011](adr/0011-default-quiz-problems.md) |
+| 기본 문제를 고르는 통합 테스트는 단원에 테스트가 넣은 문제만 있다고 가정하지 않고, 마이그레이션이 넣은 기본 문제를 DB에서 읽어 단언한다 | `app/api/quiz-problems/route.integration.test.ts`, 노션 TC-116, TC-136, TC-138 | [0011](adr/0011-default-quiz-problems.md) |
 
 ## 설계 결정
 
@@ -53,6 +55,7 @@
 | [0008](adr/0008-question-concept-summary.md) | 질문 개념 분류와 요약은 Haiku 5.5로 따로 부르고, 실패해도 답을 막지 않는다 | 확정 |
 | [0009](adr/0009-migrate-on-deploy.md) | DB 마이그레이션은 Vercel 배포 빌드에서 자동으로 적용한다 | 확정 |
 | [0010](adr/0010-quiz-free-grading.md) | 서술형 퀴즈 채점은 Haiku 5.5로 서버에서 하고, 실패하면 채점 없이 저장한다 | 확정 |
+| [0011](adr/0011-default-quiz-problems.md) | 기본 문제는 TS 모듈에서 만든 마이그레이션으로 넣고, 바꿀 때마다 새 마이그레이션으로 교체한다 | 확정 |
 
 ## 아직 도입하지 않은 규칙
 
