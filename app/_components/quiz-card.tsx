@@ -162,7 +162,7 @@ function Answering({
                 >
                   {LETTERS[index]}
                 </span>
-                {choice}
+                <span>{choice}</span>
               </label>
             );
           })}

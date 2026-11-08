@@ -174,7 +174,7 @@ export function QuestionPanel() {
   );
 
   return (
-    <aside aria-label="AI 질문" className="flex w-96 shrink-0 flex-col border-l">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-2 border-b p-4">
         <button type="button" onClick={startSession} disabled={!openedSession} className="rounded border px-3 py-1">
           새 대화
@@ -239,6 +239,6 @@ export function QuestionPanel() {
           보내기
         </button>
       </form>
-    </aside>
+    </div>
   );
 }
