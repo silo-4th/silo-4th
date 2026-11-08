@@ -32,10 +32,28 @@ const CONFIDENCE_QUESTION: Record<ProblemView["format"], string> = {
 
 const LETTERS = ["A", "B", "C", "D"];
 
-// 누른 버튼이 사라지는 단계 전환마다 포커스를 새 단계로 옮겨 키보드와 스크린리더 사용자가 자리를 잃지 않게 한다.
+// 채점 중과 실패는 화면에도 보이고, 나머지 단계의 알림은 스크린리더만 읽는다.
+const STATUS_CLASS: Partial<Record<QuizFlow["stage"], string>> = {
+  grading: "mt-3.5 text-[13px] text-gray",
+  "grading-failed": "mt-3.5 text-[13px] font-bold text-red",
+};
+
+function statusOf(flow: QuizFlow): string {
+  if (flow.stage === "grading") return "채점하고 있어요";
+  if (flow.stage === "grading-failed") return "채점 결과를 받지 못했어요";
+  if (flow.stage !== "explanation") return "";
+  const { verdict } = resultView(flow.submitted, flow.result);
+  return verdict ? `채점 결과가 나왔어요. ${verdict}` : "채점 결과가 나왔어요";
+}
+
+// 누른 버튼이 사라져 자리를 잃은 키보드와 스크린리더 사용자를 위해, 결과나 실패 단계가 나타나면 포커스를 그쪽으로 옮긴다.
+// 채점을 기다리는 동안 카드 밖으로 옮겨 간 포커스는 빼앗지 않는다. 결과와 실패는 상태 알림으로도 전한다.
 // 참조가 바뀌지 않는 함수라서 다시 그려도 포커스를 다시 가져가지 않는다.
 function focusOnMount(element: HTMLElement | null) {
-  element?.focus();
+  if (!element) return;
+  const focused = element.ownerDocument.activeElement;
+  const stayed = !focused || focused === element.ownerDocument.body || element.closest("[data-quiz-card]")?.contains(focused);
+  if (stayed) element.focus();
 }
 
 // 퀴즈 탭과 꺼내 먹기가 함께 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
@@ -62,7 +80,7 @@ export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: ()
   }
 
   return (
-    <section aria-label="퀴즈" className="flex flex-col bg-white text-ink">
+    <section aria-label="퀴즈" data-quiz-card className="flex flex-col bg-white text-ink">
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <span className="inline-flex h-5.5 items-center rounded bg-line-2 px-2 text-xs font-semibold text-ink-2">
           {problem.conceptTitle}
@@ -87,22 +105,17 @@ export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: ()
       )}
       {flow.stage === "problem" && <Answering problem={problem} flow={flow} dispatch={dispatch} />}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
-      <p role="status" className="mt-3.5 text-[13px] text-gray empty:mt-0">
-        {flow.stage === "grading" ? "채점하고 있어요" : ""}
+      <p role="status" className={STATUS_CLASS[flow.stage] ?? "sr-only"}>
+        {statusOf(flow)}
       </p>
       {flow.stage === "grading-failed" && (
-        <div className="mt-3.5 space-y-3">
-          <p role="alert" className="text-[13px] font-bold text-red">
-            채점 결과를 받지 못했어요
-          </p>
-          <div className="flex gap-2">
-            <button ref={focusOnMount} type="button" onClick={() => dispatch({ type: "retry" })} className={BUTTON}>
-              다시 시도
-            </button>
-            <button type="button" onClick={next} className={BUTTON}>
-              다음 문제로
-            </button>
-          </div>
+        <div className="mt-3 flex gap-2">
+          <button ref={focusOnMount} type="button" onClick={() => dispatch({ type: "retry" })} className={BUTTON}>
+            다시 시도
+          </button>
+          <button type="button" onClick={next} className={BUTTON}>
+            다음 문제로
+          </button>
         </div>
       )}
       {flow.stage === "explanation" && (
@@ -134,7 +147,7 @@ function Answering({
             return (
               <label
                 key={index}
-                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-white px-3.5 py-3 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-gray-3 has-checked:border-ink has-focus-visible:outline-2 has-focus-visible:outline-green"
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-white px-3.5 py-3 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-gray-3 has-checked:border-ink has-focus-visible:outline-2 has-focus-visible:outline-green-600"
               >
                 <input
                   type="radio"
@@ -162,7 +175,7 @@ function Answering({
           maxLength={MAX_ANSWER_LENGTH}
           value={flow.text}
           onChange={(event) => dispatch({ type: "write", text: event.target.value })}
-          className="mt-3 h-11 w-full rounded-md border border-line bg-white px-3 text-[15px] focus:border-green focus:outline-none"
+          className="mt-3 h-11 w-full rounded-md border border-line bg-white px-3 text-[15px] focus:border-green-600 focus:outline-none"
         />
       )}
       {problem.format === "free" && (
@@ -173,7 +186,7 @@ function Answering({
             maxLength={MAX_ANSWER_LENGTH}
             value={flow.text}
             onChange={(event) => dispatch({ type: "write", text: event.target.value })}
-            className="mt-3 block h-23 w-full resize-none overflow-y-auto rounded-md border border-line bg-white px-3.5 py-3 text-sm leading-relaxed focus:border-green focus:outline-none"
+            className="mt-3 block h-23 w-full resize-none overflow-y-auto rounded-md border border-line bg-white px-3.5 py-3 text-sm leading-relaxed focus:border-green-600 focus:outline-none"
           />
           <button
             type="button"
@@ -217,7 +230,7 @@ function Explanation({
 }: ReturnType<typeof resultView> & { format: ProblemView["format"]; explanation: string; onNext: () => void }) {
   const right = verdict === "맞았어요";
   return (
-    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="outline-none">
+    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-600">
       <dl className="mt-3 flex flex-col gap-2 text-sm">
         <div
           className={`rounded-lg border px-3.5 py-3 ${verdict === null ? "border-line" : right ? "border-green bg-green-25" : "border-red bg-red-50"}`}
