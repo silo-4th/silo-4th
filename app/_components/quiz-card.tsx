@@ -32,6 +32,12 @@ const CONFIDENCE_QUESTION: Record<ProblemView["format"], string> = {
 
 const LETTERS = ["A", "B", "C", "D"];
 
+// 누른 버튼이 사라지는 단계 전환마다 포커스를 새 단계로 옮겨 키보드와 스크린리더 사용자가 자리를 잃지 않게 한다.
+// 참조가 바뀌지 않는 함수라서 다시 그려도 포커스를 다시 가져가지 않는다.
+function focusOnMount(element: HTMLElement | null) {
+  element?.focus();
+}
+
 // 퀴즈 탭과 꺼내 먹기가 함께 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
 export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: () => void }) {
   const [flow, setFlow] = useState<QuizFlow>(() => startQuizFlow(problem));
@@ -90,7 +96,7 @@ export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: ()
             채점 결과를 받지 못했어요
           </p>
           <div className="flex gap-2">
-            <button type="button" onClick={() => dispatch({ type: "retry" })} className={BUTTON}>
+            <button ref={focusOnMount} type="button" onClick={() => dispatch({ type: "retry" })} className={BUTTON}>
               다시 시도
             </button>
             <button type="button" onClick={next} className={BUTTON}>
@@ -211,7 +217,7 @@ function Explanation({
 }: ReturnType<typeof resultView> & { format: ProblemView["format"]; explanation: string; onNext: () => void }) {
   const right = verdict === "맞았어요";
   return (
-    <>
+    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="outline-none">
       <dl className="mt-3 flex flex-col gap-2 text-sm">
         <div
           className={`rounded-lg border px-3.5 py-3 ${verdict === null ? "border-line" : right ? "border-green bg-green-25" : "border-red bg-red-50"}`}
@@ -238,6 +244,6 @@ function Explanation({
       <button type="button" onClick={onNext} className="mt-6 h-11 w-full rounded-md bg-ink text-[15px] font-semibold text-white hover:bg-black">
         다음 문제
       </button>
-    </>
+    </div>
   );
 }
