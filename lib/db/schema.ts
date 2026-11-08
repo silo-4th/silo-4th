@@ -20,6 +20,7 @@ import { DIRECT_SOURCE } from "@/lib/source";
 export const QUESTION_STATUSES = ["pending", "ok", "error"] as const;
 export const MESSAGE_ROLES = ["user", "assistant"] as const;
 export const QUIZ_FORMATS = ["mcq", "blank", "free"] as const;
+export type QuizFormat = (typeof QUIZ_FORMATS)[number];
 export const CONFIDENCES = ["sure", "unsure", "guess"] as const;
 export const RECALL_REASONS = ["read_no_question", "asked", "quiz"] as const;
 
