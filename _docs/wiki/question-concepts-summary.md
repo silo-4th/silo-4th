@@ -10,7 +10,7 @@
 - 확인 날짜: 2026-11-04, 2026-11-05에 대화 세션과 개념 데이터 반영
 - 자료 성격: Linear 이슈와 문서, `4-61` 브랜치 코드 `lib/questions.ts`, `lib/llm/answer.ts`, `lib/db/schema.ts`, `app/api/questions/route.integration.test.ts`
 - 결정한 사람: 개발자. 결정의 근거와 대안은 [ADR 0008](adr/0008-question-concept-summary.md)에 있다
-- 관련 문서: [ADR 0007](adr/0007-ai-model.md), [질문 서버와 질문 창](../output/2026-11-03-question-server.md), [노션 Test-case DB](https://app.notion.com/p/40ce7e8fdd1280268097ef263f610f7a) TC-61~70, TC-86
+- 관련 문서: [ADR 0007](adr/0007-ai-model.md), [질문 서버와 질문 창](../output/2026-11-03-question-server.md), [노션 Test-case DB](https://app.notion.com/p/40ce7e8fdd1280268097ef263f610f7a) TC-61~70, TC-86, TC-180. TC-61은 폐기했다
 
 ## 확인된 내용
 
@@ -31,10 +31,10 @@ flowchart TD
   Start(["claimQuestion이 answer를 돌려줌"]) --> HasConcepts{"이미 연결된<br/>개념이 있나"}
   HasConcepts -->|"있음, 다시 시도한 질문"| Reuse["저장된 개념을 그대로 씀"]
   HasConcepts -->|없음| Classify["Haiku 5.5로 분류<br/>개념 ID와 키워드, 10초 제한"]
-  Classify -->|성공| Filter["목록에 없는 ID와 중복을 거르고<br/>키워드를 정리"]
+  Classify -->|성공| Filter["목록에 없는 ID와 중복을 거르고<br/>첫 번째 하나만 남기고 키워드를 정리"]
   Classify -->|"실패, 10초 초과"| NoContext["과거 요약 없이 진행"]
   Filter --> SaveConcepts["question_concepts 저장<br/>이미 있는 줄은 건너뜀"]
-  SaveConcepts --> AnyConcept{"개념이<br/>하나 이상인가"}
+  SaveConcepts --> AnyConcept{"개념이<br/>있나"}
   Reuse --> ByConcept
   AnyConcept -->|예| ByConcept["다른 대화에서 같은 개념인<br/>내 과거 질문 요약, 최근 5개"]
   AnyConcept -->|아니오| ByKeyword["다른 대화에서 키워드가 겹치는<br/>내 과거 질문 요약, 최근 5개"]
@@ -132,7 +132,7 @@ erDiagram
     }
 ```
 
-`concepts`에는 학습 화면 본문의 소제목 하나를 개념 하나로 본 24개가 들어 있다. 2026-11-05에 송호윤이 Linear [4-79](https://linear.app/silo0/issue/4-79) 코멘트로 정했고, `drizzle/0004_concepts.sql`로 넣는다. 코드는 개념 수를 고정하지 않고 `concepts` 테이블을 읽어 분류 프롬프트에 넣는다.
+`concepts`에는 학습 화면 본문의 소제목 하나를 개념 하나로 본 24개가 들어 있다. 2026-11-05에 송호윤이 Linear [4-79](https://linear.app/silo0/issue/4-79) 코멘트로 정했고, `drizzle/0004_concepts.sql`로 넣는다. 코드는 개념 수를 고정하지 않고 `concepts` 테이블을 읽어 분류 프롬프트에 넣는다. 2026-11-09부터 개념마다 `lib/llm/concept-notes.ts`의 한 줄 정리를 붙이고, 한 줄 정리가 없는 개념은 이름만 넣는다. 근거는 [ADR 0012](adr/0012-single-concept-classification.md)다.
 
 ### 분류
 
@@ -140,9 +140,10 @@ erDiagram
 | --- | --- |
 | 모델 | Claude Haiku 5.5. 모델 ID는 `env.ANTHROPIC_UTILITY_MODEL`로 읽는다 |
 | 후보 | 단원과 상관없이 `concepts` 전체. 학습자가 열린 단원과 다른 내용을 물어도 맞는 개념에 연결한다 |
-| 입력 | 질문 원문, 개념 ID와 이름 목록 |
-| 출력 | 해당하는 개념 ID 목록과 키워드 목록. 해당하는 개념이 없으면 빈 목록과 키워드만 돌려준다 |
+| 입력 | 질문 원문, 개념 ID와 이름과 한 줄 정리 목록 |
+| 출력 | 개념 ID 목록과 키워드 목록. 프롬프트는 개념을 최대 하나만 고르게 하지만 가끔 둘을 고른다. 해당하는 개념이 없으면 빈 목록과 키워드만 돌려준다 |
 | 출력 정리 | 개념 목록에 없는 ID와 중복을 버린다. TC-66 |
+| 저장 | 남은 ID 가운데 첫 번째 하나만 `question_concepts`에 넣는다. 2026-11-09 [ADR 0012](adr/0012-single-concept-classification.md). TC-180 |
 | 키워드 정리 | 소문자로 바꾸고 앞뒤 공백을 지운 뒤, 빈 값과 중복을 버린다. 한글은 그대로 둔다. 분류와 요약이 같은 함수를 쓴다. TC-70 |
 | 제한 시간 | 10초. 넘으면 실패로 보고 과거 요약 없이 답한다. TC-64 |
 | 다시 시도 | 이미 연결된 개념이 있으면 분류하지 않고 그 개념으로 과거 요약을 찾는다. 저장은 이미 있는 줄을 건너뛴다. TC-67 |
@@ -209,7 +210,8 @@ erDiagram
 
 | 케이스 | 확인하는 것 |
 | --- | --- |
-| TC-61 | 분류한 개념이 `question_concepts`에 저장된다 |
+| TC-61 | 폐기. 2026-11-09에 TC-180으로 대신했다 |
+| TC-180 | AI가 개념을 여러 개 골라도 목록에 있는 첫 번째 개념 하나만 `question_concepts`에 저장된다 |
 | TC-62 | 답이 끝난 뒤 요약, 키워드, 요약 시각이 채워진다 |
 | TC-63 | 같은 개념인 내 과거 요약만 답변 요청에 들어간다 |
 | TC-64 | 분류가 실패하거나 10초를 넘어도 답을 받는다 |

@@ -1,6 +1,7 @@
 import "server-only";
 import { env } from "@/lib/env";
 import { askJson } from "./ask-json";
+import { CONCEPT_NOTES } from "./concept-notes";
 
 // 분류는 모든 질문의 첫 글자를 늦추므로 짧게 끊고, 실패하면 과거 요약 없이 답한다.
 const CLASSIFY_TIMEOUT_MS = 10_000;
@@ -13,7 +14,8 @@ const STRINGS = { type: "array", items: { type: "string" } };
 export type Classification = { conceptIds: string[]; keywords: string[] };
 export type Summary = { summary: string; keywords: string[] };
 
-// 질문이 개념 목록의 어느 개념에 대한 것인지 고르고 핵심 용어를 뽑는다. 돌려준 ID가 목록에 있는지는 확인하지 않는다.
+// 질문이 가장 직접 묻는 개념 하나를 고르고 핵심 용어를 뽑는다. 지시해도 가끔 두 개를 고르고, 돌려준 ID가 목록에 있는지도 확인하지 않는다.
+// 응답을 conceptId 하나로 받으면 실행마다 결과가 흔들려서 배열로 받는다. 근거는 평가 저장소의 classify/records/2026-11-06-single-concept.md다.
 export async function classifyQuestion(
   question: string,
   concepts: readonly { id: string; title: string }[],
@@ -21,8 +23,8 @@ export async function classifyQuestion(
   const reply = await askJson({
     model: env.ANTHROPIC_UTILITY_MODEL,
     system:
-      "학습자의 질문이 아래 개념 목록의 어느 개념에 대한 질문인지 고른다. 해당하는 개념이 없으면 conceptIds를 비운다. keywords에는 질문의 핵심 용어를 1~5개 넣는다.",
-    content: `<concepts>\n${concepts.map(({ id, title }) => `${id}: ${title}`).join("\n")}\n</concepts>\n\n<question>\n${question}\n</question>`,
+      "학습자의 질문이 아래 개념 목록의 어느 개념에 대한 질문인지 고른다. 개념마다 이름 뒤에 한 줄 정리가 붙어 있다. 이름만 보지 말고 한 줄 정리까지 읽고, 질문이 실제로 묻는 내용과 가장 직접 맞는 개념을 고른다. 개념은 최대 하나만 고른다. 질문이 여러 개념에 걸치면 질문이 가장 직접 묻는 개념 하나를 고른다. 해당하는 개념이 없으면 conceptIds를 비운다. keywords에는 질문의 핵심 용어를 1~5개 넣는다.",
+    content: `<concepts>\n${concepts.map(conceptLine).join("\n")}\n</concepts>\n\n<question>\n${question}\n</question>`,
     properties: { conceptIds: STRINGS, keywords: STRINGS },
     timeoutMs: CLASSIFY_TIMEOUT_MS,
   });
@@ -41,6 +43,11 @@ export async function summarizeQuestion(question: string, answer: string): Promi
   });
   if (typeof reply.summary !== "string" || !reply.summary.trim()) throw new Error("AI 요약이 비어 있다.");
   return { summary: reply.summary.trim(), keywords: strings(reply.keywords) };
+}
+
+function conceptLine({ id, title }: { id: string; title: string }) {
+  const note = CONCEPT_NOTES[id];
+  return note ? `${id}: ${title} - ${note}` : `${id}: ${title}`;
 }
 
 function strings(value: unknown): string[] {

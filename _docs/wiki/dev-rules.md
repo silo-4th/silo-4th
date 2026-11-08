@@ -35,6 +35,7 @@
 | AI 모델 ID를 코드에 쓰지 않고 `lib/env.ts`의 `env.ANTHROPIC_MODEL`과 `env.ANTHROPIC_UTILITY_MODEL`로만 읽는다. 질문 답변과 퀴즈 생성은 `ANTHROPIC_MODEL`, 질문 개념 분류와 요약, 서술형 퀴즈 채점은 `ANTHROPIC_UTILITY_MODEL`을 쓴다. 운영 모델은 Vercel 환경 변수로 정한다 | `lib/env.ts`, `lib/llm/`, 루트 `CLAUDE.md`, 코드 리뷰 (기계 검사 없음) | [0007](adr/0007-ai-model.md), [0008](adr/0008-question-concept-summary.md), [0010](adr/0010-quiz-free-grading.md) |
 | 퀴즈 채점은 풀이 저장 API가 서버에서 하고, 화면이 보낸 채점 결과는 쓰지 않는다. 세 포맷 모두 맞음과 틀림을 `is_correct`에 남기고, 서술형 잘 모르겠어요는 확신도 `guess`의 틀림으로 남긴다. 서술형 AI 채점이 실패하면 `is_correct`를 비운 채 풀이를 저장한다. 같은 풀이 ID가 다시 오면 다시 채점하지 않고 처음 결과를 돌려준다 | `lib/quiz-attempts.ts`, 노션 TC-103~114, TC-134 | [0010](adr/0010-quiz-free-grading.md) |
 | AI가 고른 개념 ID는 `concepts`에 있는 것만 남기고, 키워드는 소문자로 맞춰 공백과 중복을 없앤 뒤 저장하거나 검색에 쓴다. 분류와 요약이 실패해도 질문의 답은 막지 않는다 | 질문 개념 분류와 요약 코드, 노션 TC-64~66, TC-70 | [0008](adr/0008-question-concept-summary.md) |
+| 질문 하나에는 개념 하나만 연결한다. 분류 응답은 `conceptIds` 배열로 받고, 목록에 있는 ID 가운데 첫 번째 하나만 `question_concepts`에 넣는다. 분류 프롬프트의 개념별 한 줄 정리는 `lib/llm/concept-notes.ts`에 두고, 개념이나 단원 본문의 "개념 한눈에 보기" 표가 바뀌면 함께 고친다 | `lib/questions.ts` `tagQuestion`, 노션 TC-180, 코드 리뷰 | [0012](adr/0012-single-concept-classification.md) |
 | DB는 `lib/db`의 `getDb()`로만 접근하고, 테이블은 `lib/db/schema.ts`에만 정의한다. 이 모듈을 클라이언트 컴포넌트에서 import하면 빌드가 실패한다 | `lib/db/index.ts` (`server-only`) | [0003](adr/0003-neon-postgres-drizzle.md) |
 | DB 마이그레이션은 Vercel 배포 빌드에서 자동으로 적용한다. 프리뷰는 `preview/<브랜치>`, 운영은 `production` 브랜치에 들어간다. 운영 DB에 손으로 돌리지 않고, 배포와 연결되지 않은 `test`, `vercel-dev`만 손으로 적용한다 | `vercel.json` `buildCommand`, `drizzle.config.ts` | [0009](adr/0009-migrate-on-deploy.md) |
 | 푸시한 마이그레이션은 다시 생성하거나 고치지 않고 새 마이그레이션으로 더한다. 다른 브랜치와 충돌하면 `_journal.json`을 손으로 합치지 않고 내 마이그레이션을 지운 뒤 `npm run db:generate`로 다시 만든다. 마이그레이션은 이전 코드가 새 스키마에서도 돌아가게 만든다 | 코드 리뷰 (기계 검사 없음) | [0009](adr/0009-migrate-on-deploy.md) |
@@ -56,6 +57,7 @@
 | [0009](adr/0009-migrate-on-deploy.md) | DB 마이그레이션은 Vercel 배포 빌드에서 자동으로 적용한다 | 확정 |
 | [0010](adr/0010-quiz-free-grading.md) | 서술형 퀴즈 채점은 Haiku 5.5로 서버에서 하고, 실패하면 채점 없이 저장한다 | 확정 |
 | [0011](adr/0011-default-quiz-problems.md) | 기본 문제는 TS 모듈에서 만든 마이그레이션으로 넣고, 바꿀 때마다 새 마이그레이션으로 교체한다 | 확정 |
+| [0012](adr/0012-single-concept-classification.md) | 질문 하나에는 개념 하나만 연결하고, 분류 프롬프트에 개념별 한 줄 정리를 붙인다 | 확정 |
 
 ## 아직 도입하지 않은 규칙
 

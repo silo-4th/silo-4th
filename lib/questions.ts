@@ -230,6 +230,7 @@ async function pastSummariesFor({
   }
 }
 
+// 질문 하나에는 가장 연관 있는 개념 하나만 붙인다. 꺼내 먹기가 이 연결로 질문한 절을 세기 때문이다.
 // 다시 시도한 질문은 처음 분류한 개념을 그대로 쓰므로, 개념이 연결되지 않은 질문만 분류한다. 시도마다 분류가 달라져 개념이 쌓이지 않게 한다.
 // AI가 뽑은 키워드는 개념이 없을 때 과거 질문을 찾는 데만 쓰고, 저장하는 키워드는 요약에서 뽑는다.
 async function tagQuestion(questionId: string, content: string) {
@@ -239,7 +240,7 @@ async function tagQuestion(questionId: string, content: string) {
   const conceptIds = knownConceptIds(
     classified.conceptIds,
     concepts.map(({ id }) => id),
-  );
+  ).slice(0, 1);
   if (conceptIds.length > 0) {
     await db
       .insert(questionConcept)
