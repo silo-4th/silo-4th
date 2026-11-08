@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { QuizCard } from "@/app/_components/quiz-card";
-import { type QuizTab, type QuizTabEvent, advanceQuizTab, fetchProblem, startQuizTab } from "@/lib/quiz-tab";
+import { type QuizTab, type QuizTabEvent, advanceQuizTab, fetchProblem, settleProblem, startQuizTab } from "@/lib/quiz-tab";
 import { QuestionPanel } from "./question-panel";
 
 const TABS = [
@@ -24,9 +24,7 @@ function useQuizTab() {
     if (next === tab) return;
     setTab(next);
     if (next.stage !== "loading") return;
-    void fetchProblem(next.unitId).then((problem) =>
-      setTab((current) => advanceQuizTab(current, problem ? { type: "loaded", problem } : { type: "failed" })),
-    );
+    void fetchProblem(next).then((problem) => setTab((current) => settleProblem(current, next, problem)));
   }
   return [tab, send] as const;
 }
@@ -41,6 +39,13 @@ export function StudyPanel() {
   function open(id: TabId) {
     setShown(id);
     if (id === "quiz") sendQuiz({ type: "enter", unitId });
+  }
+
+  // 누른 버튼이 숨는 에이전트 탭에 있으므로 포커스를 퀴즈 탭으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
+  function solveRelated(questionId: string) {
+    setShown("quiz");
+    tabs.current.get("quiz")?.focus();
+    sendQuiz({ type: "related", questionId });
   }
 
   function moveFocus(event: KeyboardEvent, index: number) {
@@ -76,12 +81,12 @@ export function StudyPanel() {
         ))}
       </div>
       <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
-        <QuestionPanel />
+        <QuestionPanel onSolveRelated={solveRelated} />
       </div>
       <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="min-h-0 flex-1 overflow-y-auto p-5">
         <QuizTabBody
           tab={quiz}
-          onRetry={() => sendQuiz({ type: "retry", unitId })}
+          onRetry={() => sendQuiz({ type: "retry" })}
           onNext={() => sendQuiz({ type: "next", unitId })}
         />
       </div>

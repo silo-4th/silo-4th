@@ -55,7 +55,7 @@ function savedTurn(sessionId: string, openedUnitId: string, { questionId, unitId
   return answer === null ? { ...question, status: "failed", reason: "failed" } : { ...question, status: "answered", answer };
 }
 
-export function QuestionPanel() {
+export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId: string) => void }) {
   const { unitId } = useParams<{ unitId: string }>();
   const router = useRouter();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -201,6 +201,13 @@ export function QuestionPanel() {
             {turn.status !== "failed" && turn.answer && (
               <li className="unit-body p-2">
                 <Markdown remarkPlugins={[remarkGfm]}>{turn.answer}</Markdown>
+              </li>
+            )}
+            {turn.status === "answered" && (
+              <li className="px-2">
+                <button type="button" onClick={() => onSolveRelated(id)} className="rounded border px-3 py-1 text-sm">
+                  관련 문제 풀어보기
+                </button>
               </li>
             )}
             {turn.status === "failed" && (
