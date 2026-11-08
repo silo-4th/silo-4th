@@ -411,10 +411,9 @@ describe("꺼내 먹기 진행 기록", () => {
       { headers: mine.headers },
     );
 
-    for (const response of [wrongProblem, othersItem]) {
-      expect(response.status).toBeGreaterThanOrEqual(400);
-      expect(await response.text()).toBe("");
-    }
+    expect(wrongProblem.status).toBe(400);
+    expect(othersItem.status).toBe(403);
+    for (const response of [wrongProblem, othersItem]) expect(await response.text()).toBe("");
     for (const item of [myItem, otherItem]) expect(await attemptsForItem(item.id)).toEqual([]);
     expect(
       await getDb()
