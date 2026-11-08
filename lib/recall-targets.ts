@@ -56,6 +56,7 @@ export function pickRecallTargets(records: readonly RecallRecord[], random: () =
   const asked: RecallTarget[] = [];
   for (const [conceptId, { unitId, viewed, quizzed, questionIds }] of sections) {
     const questionId = shuffle(questionIds, random)[0];
+    // 질문과 퀴즈 풀이가 모두 있으면 근거 질문을 남길 수 있는 asked로 본다. 가설 C에서는 asked와 quiz를 같이 센다.
     if (questionId) asked.push({ conceptId, unitId, reason: "asked", sourceQuestionId: questionId });
     else if (quizzed) asked.push({ conceptId, unitId, reason: "quiz" });
     else if (viewed) skipped.push({ conceptId, unitId, reason: "read_no_question" });
