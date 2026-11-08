@@ -5,6 +5,8 @@ import { parseAttemptInput, reportQuizError, type Submission, submitAttempt } fr
 const REFUSED: Record<Exclude<Submission["kind"], "saved">, number> = {
   invalid: 400,
   "unknown-problem": 404,
+  "unknown-recall-item": 404,
+  "already-answered": 409,
   "not-yours": 403,
 };
 
