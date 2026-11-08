@@ -190,7 +190,7 @@ type StoredProblem = Pick<
   "id" | "format" | "conceptId" | "stem" | "hint" | "answer"
 > & { conceptTitle: string };
 
-function toView({
+export function toProblemView({
   id,
   format,
   conceptId,
@@ -205,7 +205,8 @@ function toView({
   return view;
 }
 
-const storedColumns = {
+// 정답과 해설을 뺀 문제 화면에 필요한 컬럼이다. concepts와 조인해서 읽는다.
+export const problemViewColumns = {
   id: quizProblem.id,
   format: quizProblem.format,
   conceptId: quizProblem.conceptId,
@@ -222,7 +223,7 @@ async function defaultProblem(
 ): Promise<ProblemView> {
   const db = getDb();
   const problems = await db
-    .select(storedColumns)
+    .select(problemViewColumns)
     .from(quizProblem)
     .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
     .where(
@@ -250,7 +251,7 @@ async function defaultProblem(
   const unsolved = problems.filter((problem) => !solvedIds.has(problem.id));
   const picked = pickRandom(unsolved.length > 0 ? unsolved : problems);
   if (!picked) throw new Error("기본 문제를 고르지 못했다.");
-  return toView(picked);
+  return toProblemView(picked);
 }
 
 type Plan = {
@@ -350,7 +351,7 @@ async function generate(
   if (!inserted) throw new Error("만든 문제를 저장하지 못했다.");
   return {
     kind: "ok",
-    problem: toView({ ...inserted, conceptTitle: target.title }),
+    problem: toProblemView({ ...inserted, conceptTitle: target.title }),
   };
 }
 
