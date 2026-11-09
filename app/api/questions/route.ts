@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     case "answer":
       return eventStream(async (send) => {
         try {
-          const result = await answerQuestion(input.questionId, (text) => send("delta", { text }));
+          const result = await answerQuestion(input.questionId, input.tone, (text) => send("delta", { text }));
           send(result.status === "ok" ? "done" : "error");
           // 요약은 다음 질문에서만 쓰므로 기다리지 않고 응답을 닫는다. 이 작업도 after 안이라 요약은 따로 after에 맡긴다.
           if (result.status === "ok") after(summarizeAnswer(input.questionId, result.question, result.answer));

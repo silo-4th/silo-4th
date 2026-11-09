@@ -1,3 +1,5 @@
+import type { AnswerTone } from "@/lib/answer-tone";
+
 // failed는 AI가 답하지 못했거나 서버가 요청을 거절한 경우, cut은 done이나 error 없이 연결이 끊긴 경우,
 // pending은 서버가 아직 같은 질문에 답하는 중인 경우, signed-out은 세션이 없어 로그인이 풀린 경우다.
 export type FailReason = "failed" | "cut" | "pending" | "signed-out";
@@ -60,7 +62,7 @@ function deltaText(data: string) {
 }
 
 export async function askQuestion(
-  input: { questionId: string; sessionId: string; unitId: string; content: string },
+  input: { questionId: string; sessionId: string; unitId: string; content: string; tone: AnswerTone },
   onText?: (answer: string) => void,
 ) {
   try {
