@@ -176,7 +176,7 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await card.getByRole("button", { name: "결과 보기" }).click();
 
-  await expect(screen.getByRole("heading", { name: "꺼내 먹기를 마쳤어요" })).toBeVisible();
+  await expect(screen.getByRole("heading", { name: "3개 중 1개를 틀렸어요" })).toBeVisible();
 
   const attempts = await db
     .select({ recallItemId: quizAttempt.recallItemId })

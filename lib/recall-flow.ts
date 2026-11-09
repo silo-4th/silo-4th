@@ -105,6 +105,11 @@ export async function openTodayRecall(): Promise<RecallSetView | null> {
   }
 }
 
+// 절로 간 기록은 학습 화면으로 가는 길을 막지 않는다. 화면을 떠나도 요청이 끝나도록 keepalive로 보낸다.
+export function recordSectionOpened(itemId: string) {
+  void post(`/api/recall-items/${itemId}/opened-section`, { keepalive: true });
+}
+
 // 네트워크가 잠깐 끊겨 시작 기록이 빠지면 뒤따르는 완료 기록도 서버가 거절하므로, 실패한 기록은 잠시 뒤 다시 보낸다.
 // 4xx는 다시 보내도 결과가 같아 다시 보내지 않는다.
 const EVENT_RETRY_DELAYS_MS = [1_000, 3_000];
