@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Solved } from "./quiz-card";
 import type { ProblemView } from "./quiz-problems";
-import { type QuizSet, type QuizSetEvent, advanceQuizSet, setGuide, setTitle, startQuizSet } from "./quiz-tab";
+import { type QuizSet, type QuizSetEvent, advanceQuizSet, finishedToday, setGuide, setTitle, startQuizSet } from "./quiz-tab";
+import { studyDay } from "./study-day";
 
 const unitA = "unit-a";
 
@@ -107,5 +108,36 @@ describe("퀴즈 탭 결과", () => {
     const reopened = run(resuming, { type: "solved" });
     expect(reopened.tab).toEqual({ stage: "result" });
     expect(reopened.results.map((slot) => slot?.chip)).toEqual(["맞혔어요", "틀렸어요", "맞았지만 헷갈렸어요"]);
+  });
+});
+
+describe("베타 동안 새 묶음 막기", () => {
+  it("TC-256 한 묶음을 마친 학습자는 결과 화면의 새 문제 풀기와 퀴즈 홈의 AI 맞춤 문제 풀기 모두 문제를 요청하지 않고 베타 안내를 띄워요", () => {
+    const finished = solveSet(solved(true), solved(true), solved(true));
+    expect(finished.tab).toEqual({ stage: "result" });
+
+    const restarted = run(finished, { type: "restart", unitId: unitA });
+    expect(restarted.tab).toEqual({ stage: "result" });
+    expect(restarted.betaNotice).toBe(true);
+
+    const home = run(restarted, { type: "dismiss" }, { type: "home" });
+    expect(home.tab).toEqual({ stage: "idle" });
+    expect(home.betaNotice).toBe(false);
+
+    const started = run(home, { type: "enter", unitId: unitA });
+    expect(started.tab).toEqual({ stage: "idle" });
+    expect(started.betaNotice).toBe(true);
+  });
+
+  it("TC-258 묶음을 마친 학습자는 같은 학습일에는 계속 막히고, 새벽 4시가 지나 학습일이 바뀌면 다시 새 묶음을 시작할 수 있어요", () => {
+    const finishedDay = studyDay(new Date("2026-11-09T15:00:00+09:00"));
+
+    const beforeFour = run(startQuizSet(finishedToday(finishedDay, new Date("2026-11-10T03:59:00+09:00"))), { type: "enter", unitId: unitA });
+    expect(beforeFour.tab).toEqual({ stage: "idle" });
+    expect(beforeFour.betaNotice).toBe(true);
+
+    const afterFour = run(startQuizSet(finishedToday(finishedDay, new Date("2026-11-10T04:00:00+09:00"))), { type: "enter", unitId: unitA });
+    expect(afterFour.tab).toEqual({ stage: "loading", number: 1, unitId: unitA });
+    expect(afterFour.betaNotice).toBe(false);
   });
 });

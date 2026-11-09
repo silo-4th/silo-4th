@@ -17,12 +17,15 @@ import {
   type SetResults,
   advanceQuizSet,
   clearSavedProblem,
+  completesSet,
   fetchPersonalized,
   fetchProblem,
   fetchResumedProblem,
   gaugeFilled,
   readSavedProblem,
+  readSetFinished,
   saveProblem,
+  saveSetFinished,
   setGuide,
   setItems,
   setTitle,
@@ -43,7 +46,7 @@ type TabId = (typeof TABS)[number]["id"];
 // 문제를 띄운 동안에는 칩이 바뀔 때마다 기억해, 새로고침 뒤에도 결과에 앞서 푼 문제가 나온다.
 // 이어 풀기 응답이 다시 새 문제 요청으로 이어지므로, 응답을 반영할 때도 지금 상태를 ref로 읽어 바로 다음 요청을 보낸다.
 function useQuizSet(learnerId: string) {
-  const [set, setSet] = useState<QuizSet>(startQuizSet);
+  const [set, setSet] = useState<QuizSet>(() => startQuizSet(readSetFinished(learnerId)));
   const current = useRef(set);
   // 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
   const shownAt = useRef<string>(undefined);
@@ -70,9 +73,15 @@ function useQuizSet(learnerId: string) {
     commit(next);
   }
 
-  function send(event: QuizSetEvent) {
-    const next = advanceQuizSet(current.current, event);
+  // 탭을 연 채로 학습일이 바뀌었거나 다른 탭에서 묶음을 마쳤을 수 있어, 새 묶음을 시작하는 버튼은 누를 때 저장된 학습일로 다시 판단한다.
+  function send(event: QuizSetEvent): QuizSet {
+    const starting = event.type === "enter" || event.type === "restart";
+    const base = starting ? { ...current.current, finished: readSetFinished(learnerId) } : current.current;
+    // 메모리의 finished는 지난 학습일 값일 수 있어, 바뀔 때가 아니라 묶음을 마치는 이벤트마다 오늘 학습일을 남긴다.
+    if (completesSet(base.tab, event)) saveSetFinished(learnerId);
+    const next = advanceQuizSet(base, event);
     if (next !== current.current) commit(next);
+    return next;
   }
   return [set, send] as const;
 }
@@ -178,21 +187,55 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
             }
             onStart={() => {
               // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
-              sendQuiz({ type: "enter", unitId });
-              tabs.current.get("quiz")?.focus();
+              // 막혀서 안내가 뜨면 버튼이 남고, 안내를 닫을 때 브라우저가 그 버튼으로 포커스를 돌려준다.
+              if (!sendQuiz({ type: "enter", unitId }).betaNotice) tabs.current.get("quiz")?.focus();
             }}
             onRetry={() => sendQuiz({ type: "retry" })}
             onGraded={(solved) => sendQuiz({ type: "graded", solved })}
             onNext={(solved) => sendQuiz({ type: "next", unitId, solved })}
             onLeaveResult={(leave) => {
               // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
-              sendQuiz(leave === "home" ? { type: "home" } : { type: "restart", unitId });
-              tabs.current.get("quiz")?.focus();
+              const next = sendQuiz(leave === "home" ? { type: "home" } : { type: "restart", unitId });
+              if (!next.betaNotice) tabs.current.get("quiz")?.focus();
             }}
           />
+          <BetaNotice open={quiz.betaNotice} onClose={() => sendQuiz({ type: "dismiss" })} />
         </div>
       </aside>
     </>
+  );
+}
+
+// 확인이나 Esc로 닫으면 close 이벤트가 오고, 브라우저가 모달을 열기 전 버튼으로 포커스를 돌려준다.
+function BetaNotice({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (open && !dialog?.open) dialog?.showModal();
+    if (!open && dialog?.open) dialog.close();
+  }, [open]);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="beta-notice-title"
+      onClose={onClose}
+      className="m-auto w-[min(320px,calc(100%-32px))] rounded-2xl bg-white p-6 text-center text-ink backdrop:bg-[rgba(18,19,20,0.35)]"
+    >
+      <h2 id="beta-notice-title" className="text-[19px] font-bold tracking-tight">
+        아직 베타 단계예요
+      </h2>
+      <p className="mt-2 text-[13.5px] leading-relaxed text-gray">
+        지금은 하루에 한 묶음만 풀 수 있어요.
+        <br />
+        새벽 4시가 지나면 새 문제를 풀 수 있어요.
+      </p>
+      <form method="dialog" className="mt-5">
+        <button type="submit" className="btn btn-dark btn-lg btn-block">
+          확인
+        </button>
+      </form>
+    </dialog>
   );
 }
 

@@ -514,32 +514,30 @@ test("TC-248 퀴즈 탭에서 세 문제를 풀면 마지막 문제에 결과 �
   expect(served).toBe(3);
 });
 
-test("TC-249 퀴즈 탭 결과 화면에서 새 문제 풀기를 누르면 새 묶음의 첫 문제가 뜨고, 퀴즈 홈을 누르면 퀴즈 홈이 보여요", async ({ page, learnerId }) => {
+test("TC-257 세 문제를 풀고 결과 화면에서 새 문제 풀기를 누르면 베타 안내 모달이 뜨고, 퀴즈 홈으로 나가 새로고침한 뒤 AI 맞춤 문제 풀기를 눌러도 같은 안내가 뜨며 문제를 만들지 않아요", async ({ page, learnerId }) => {
   const [first] = await firstUnits(1);
   if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
-  const views = await storeProblems(learnerId, first.id, 6);
-  const bodies: unknown[] = [];
-  await page.route(PROBLEMS_PATH, (route) => {
-    const view = views[bodies.length];
-    bodies.push(route.request().postDataJSON());
-    return route.fulfill({ json: view });
-  });
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
 
   await page.goto(`/study/${first.id}`);
   await tab(page, "퀴즈").click();
   await startQuiz(page);
-  await solveSet(page, views.slice(0, 3));
+  await solveSet(page, views);
 
   const panel = quizPanel(page);
+  const notice = page.getByRole("dialog", { name: "아직 베타 단계예요" });
   await panel.getByRole("button", { name: "새 문제 풀기" }).click();
-  await expect(panel.getByText(views[3]?.stem ?? "")).toBeVisible();
-  await expect(panel.getByText("1 / 3")).toBeVisible();
-  await expect(panel.getByRole("progressbar", { name: "문제 진행" })).toHaveAttribute("aria-valuenow", "0");
-  expect(bodies).toHaveLength(4);
-  expect(bodies[3]).toEqual({ unitId: first.id });
-
-  await solveSet(page, views.slice(3, 6));
+  await expect(notice).toBeVisible();
+  await notice.getByRole("button", { name: "확인" }).click();
+  await expect(notice).toBeHidden();
   await panel.getByRole("button", { name: "퀴즈 홈" }).click();
+
+  await page.reload();
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await expect(notice).toBeVisible();
   await expect(panel.getByRole("button", { name: "AI 맞춤 문제 풀기" })).toBeVisible();
-  expect(bodies).toHaveLength(6);
+  expect(served).toBe(3);
 });
