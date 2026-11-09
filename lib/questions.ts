@@ -171,7 +171,7 @@ export async function answerQuestion(
         and(eq(question.sessionId, asked.sessionId), eq(question.status, "ok"), lt(question.askedAt, asked.askedAt)),
       )
       .orderBy(asc(question.askedAt), asc(question.id), asc(message.seq));
-    const pastSummaries = await pastSummariesFor({
+    const pastQuestions = await pastQuestionsFor({
       questionId,
       learnerId: asked.learnerId,
       sessionId: asked.sessionId,
@@ -182,7 +182,7 @@ export async function answerQuestion(
     let reply: string;
     try {
       reply = await streamAnswer(
-        { unitContent: asked.unitContent, history, question: asked.question, pastSummaries },
+        { unitContent: asked.unitContent, history, question: asked.question, pastQuestions },
         onText,
       );
     } catch (error) {
@@ -204,7 +204,7 @@ export async function answerQuestion(
 }
 
 // 분류와 과거 요약은 답을 돕는 일이라, 실패하면 과거 요약 없이 답한다.
-async function pastSummariesFor({
+async function pastQuestionsFor({
   questionId,
   learnerId,
   sessionId,
@@ -277,13 +277,13 @@ async function findPastSummaries({
   if (!sameTopic) return [];
 
   const rows = await db
-    .select({ summary: question.summary })
+    .select({ summary: question.summary, askedAt: question.askedAt })
     .from(question)
     .where(and(eq(question.learnerId, learnerId), ne(question.sessionId, sessionId), isNotNull(question.summary), sameTopic))
     .orderBy(desc(question.askedAt))
     .limit(PAST_SUMMARY_LIMIT);
   // 오래된 질문부터 읽히게 순서를 뒤집는다.
-  return rows.flatMap(({ summary }) => (summary ? [summary] : [])).reverse();
+  return rows.flatMap(({ summary, askedAt }) => (summary ? [{ summary, askedAt }] : [])).reverse();
 }
 
 // 답을 보낸 뒤에 부른다. 요약은 다음 질문에서만 쓰므로, 실패하면 요약 칸을 비워 두고 질문은 ok로 둔다.
