@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { test as base } from "@playwright/test";
+import { type BrowserContext, test as base } from "@playwright/test";
 import { asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import {
@@ -93,6 +93,17 @@ export async function saveAnswered(
   ]);
 }
 
+// 같은 브라우저에서 다른 학습자로 바꿔 들어갈 때도 쓴다. 쿠키 이름이 같아 앞 학습자의 세션 쿠키를 덮는다.
+export async function signIn(context: BrowserContext, baseURL: string, learnerId: string) {
+  const token = randomUUID();
+  await db.insert(session).values({
+    token,
+    userId: learnerId,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+  await context.addCookies([{ name: "better-auth.session_token", value: signedSessionCookie(token), url: baseURL }]);
+}
+
 // 시험 날짜와 저장 동의는 한 폼에서 함께 저장하므로, 테스트 학습자도 둘 다 있거나 둘 다 없다.
 export const test = base.extend<{ consented: boolean; learnerId: string }>({
   consented: [true, { option: true }],
@@ -106,13 +117,7 @@ export const test = base.extend<{ consented: boolean; learnerId: string }>({
   },
   context: async ({ context, baseURL, learnerId }, provide) => {
     if (!baseURL) throw new Error("baseURL이 없다.");
-    const token = randomUUID();
-    await db.insert(session).values({
-      token,
-      userId: learnerId,
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    });
-    await context.addCookies([{ name: "better-auth.session_token", value: signedSessionCookie(token), url: baseURL }]);
+    await signIn(context, baseURL, learnerId);
     // 실제 질문 서버는 AI를 부른다. 기본으로는 응답하지 않아 답을 기다리는 상태로 두고, 답을 다루는 테스트가 page.route로 응답을 정한다.
     await context.route("**/api/questions", () => {});
     await provide(context);
