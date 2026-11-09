@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/google-login.testing";
 import { getDb } from "@/lib/db";
 import {
+  ISSUED_QUIZ_FORMATS,
   learner,
   message,
   type QuizAnswer,
@@ -257,7 +258,7 @@ describe("꺼내 먹기 세트 준비", () => {
     }
     expect(items.find((item) => item.reason === "asked")?.conceptId).toBe(ASKED);
     expect(items.map((item) => item.conceptId).sort()).toEqual([SKIPPED_A, SKIPPED_B, ASKED]);
-    expect(items.map((item) => item.format).sort()).toEqual(["blank", "free", "mcq"]);
+    expect(new Set(items.map((item) => item.format))).toEqual(new Set(ISSUED_QUIZ_FORMATS));
     const prompts = promptsByConcept();
     for (const item of items) expect(requestedFormat(prompts.get(item.conceptId) ?? "")).toBe(item.format);
     expect(await setsOf(other.learnerId)).toHaveLength(0);

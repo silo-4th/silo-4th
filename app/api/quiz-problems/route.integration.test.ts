@@ -649,6 +649,32 @@ describe("퀴즈 문제 만들기", () => {
     expect(rows[0]?.conceptId).toBe("s2-05-3");
   });
 
+  it("TC-229 퀴즈 탭과 관련 문제 풀어보기로 문제를 여러 번 만들어도 객관식과 빈칸 문제만 AI에 요청하고 저장해요", async () => {
+    const { headers, learnerId } = await login();
+    await viewed(learnerId, "s2-05-1");
+    const asked = await answeredQuestion(learnerId, {
+      summary: "본 절에 대한 요약",
+      conceptIds: ["s2-05-1"],
+    });
+    aiMakesProblems();
+    const times = 10;
+
+    for (let index = 0; index < times; index += 1) {
+      await problemIn(await generate({ unitId: UNIT_ID }, { headers }));
+      await problemIn(await generate({ questionId: asked.id }, { headers }));
+    }
+
+    expect(ai.create).toHaveBeenCalledTimes(times * 2);
+    const requested = ai.create.mock.calls.map(([params]) =>
+      requestedFormat(params.messages[0]?.content ?? ""),
+    );
+    expect(requested).not.toContain("free");
+    expect(new Set(requested)).toEqual(new Set(["mcq", "blank"]));
+    const stored = (await problemsOf(learnerId)).map((row) => row.format);
+    expect(stored).toHaveLength(times * 2);
+    expect(stored).not.toContain("free");
+  }, 120_000);
+
   it("TC-122 AI가 만든 문제가 모양 검사를 통과하지 못하면 502를 돌려주고 아무것도 저장하지 않아요", async () => {
     const { headers, learnerId } = await login();
     await viewed(learnerId, "s2-05-1");

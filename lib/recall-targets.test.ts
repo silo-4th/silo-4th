@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ISSUED_QUIZ_FORMATS } from "@/lib/db/schema";
 import {
   type RecallRecord,
   type RecallTarget,
@@ -121,22 +122,27 @@ describe("꺼내 먹기 출제 대상 고르기", () => {
     expect(recallRange([])).toEqual([]);
   });
 
-  it("TC-157 3문제를 내면 객관식, 빈칸, 서술 포맷이 한 번씩 붙어요", () => {
+  it("TC-230 꺼내 먹기 3문제에는 객관식과 빈칸이 모두 붙고 서술형은 붙지 않아요", () => {
     const targets: RecallTarget[] = [
       { conceptId: "skip-a", unitId: UNIT, reason: "read_no_question" },
       { conceptId: "skip-b", unitId: UNIT, reason: "read_no_question" },
       { conceptId: "ask-a", unitId: UNIT, reason: "asked", sourceQuestionId: "question-a" },
     ];
+    const doubled = new Set<string>();
 
     for (const seed of SEEDS) {
-      const items = assignFormats(targets, seeded(seed), {});
+      const formats = assignFormats(targets, seeded(seed), {}).map((item) => item.format);
 
-      expect(items.map((item) => item.format).sort()).toEqual(["blank", "free", "mcq"]);
-      expect(items).toEqual(targets.map((target, index) => ({ ...target, format: items[index]?.format })));
+      expect(formats).not.toContain("free");
+      expect(formats).toContain("mcq");
+      expect(formats).toContain("blank");
+      const twice = formats.find((format) => formats.filter((other) => other === format).length === 2);
+      if (twice) doubled.add(twice);
 
       const pair = assignFormats(targets.slice(0, 2), seeded(seed), {});
       expect(new Set(pair.map((item) => item.format)).size).toBe(2);
     }
+    expect([...doubled].sort()).toEqual(["blank", "mcq"]);
   });
 
   it("TC-158 단원에 맞지 않는 포맷은 그 문제에 붙이지 않아요", () => {
@@ -150,7 +156,7 @@ describe("꺼내 먹기 출제 대상 고르기", () => {
       const items = assignFormats(targets, seeded(seed), { "s2-07": ["blank"] });
 
       expect(items[0]?.format).not.toBe("blank");
-      expect(items.map((item) => item.format).sort()).toEqual(["blank", "free", "mcq"]);
+      expect(new Set(items.map((item) => item.format))).toEqual(new Set(ISSUED_QUIZ_FORMATS));
     }
   });
 });
