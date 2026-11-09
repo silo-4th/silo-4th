@@ -31,7 +31,7 @@ import {
   type GenerationInput,
   generateQuizProblem,
 } from "@/lib/llm/quiz-generation";
-import { type QuizProblemContent, parseQuizProblem } from "@/lib/quiz-problem";
+import { type QuizProblemContent, parseQuizProblem, shuffleChoices } from "@/lib/quiz-problem";
 import { isUuid } from "@/lib/uuid";
 
 // 퀴즈 탭은 열어 둔 단원으로, 관련 문제 풀어보기는 그 질문으로 부른다.
@@ -316,7 +316,7 @@ export async function generateProblemContent(
     throw new Error(
       `AI가 만든 ${input.format} 문제가 모양 검사를 통과하지 못했다.`,
     );
-  return content;
+  return shuffleChoices(content);
 }
 
 type Plan = {
