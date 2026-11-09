@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { QuizAnswer } from "./db/schema";
 import { type PastAttempt, pastCard, pastList } from "./past-problems";
+import { shownStem } from "./quiz-card";
 import { chipOf } from "./recall-result";
 
 const CHOICE_ANSWER: QuizAnswer = {
@@ -75,7 +76,8 @@ describe("지난 문제", () => {
       explanation: "그룹 조건은 HAVING에 써요.",
     });
     expect(blank).toMatchObject({ myAnswer: "WHERE", correctAnswer: "HAVING, 해빙", explanation: "그룹 조건은 HAVING에 써요." });
-    expect(blank.stem).toContain("그룹 조건은");
+    expect(blank.stem).toBe(shownStem("그룹 조건은 ____에 써요."));
+    expect(blank.stem).not.toContain("____");
     expect(free).toMatchObject({
       stem: "HAVING은 언제 쓰나요?",
       myAnswer: "조건을 건다",
@@ -108,5 +110,14 @@ describe("지난 문제", () => {
 
     const twoWrong = [...attempts, attempt({ attemptId: "wrong-later", answeredAt: "2026-11-09T05:00:00.000Z", chosenIndex: 3, isCorrect: false })];
     expect(pastList(twoWrong, "틀림").map((card) => card.attemptId)).toEqual(["wrong-later", "wrong"]);
+  });
+
+  it("TC-274 고른 선택지도 쓴 글도 없는 지난 문제는 내 답을 잘 모르겠어요로 보여 주고 틀렸어요 칩을 붙여요", () => {
+    const dontKnow = { format: "free", chosenIndex: null, answer: FREE_ANSWER, confidence: "guess", isCorrect: false } as const;
+    const nothing = pastCard(attempt({ ...dontKnow, answerText: null }));
+    const halfWritten = pastCard(attempt({ ...dontKnow, answerText: "그룹을" }));
+
+    expect(nothing).toMatchObject({ chip: "틀렸어요", myAnswer: "잘 모르겠어요" });
+    expect(halfWritten).toMatchObject({ chip: "틀렸어요", myAnswer: "그룹을" });
   });
 });
