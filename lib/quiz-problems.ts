@@ -8,6 +8,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  gte,
   ne,
   type SQL,
 } from "drizzle-orm";
@@ -217,6 +218,43 @@ export const problemViewColumns = {
   answer: quizProblem.answer,
   conceptTitle: concept.title,
 };
+
+// 이어 풀 문제다. solved이면 화면은 이 문제 대신 다음 문제를 만든다.
+export type ResumedProblem = { problem: ProblemView; solved: boolean };
+
+// 기본 문제는 주인이 없어 누구나 다시 불러온다. 다른 학습자의 문제는 없는 문제와 같이 undefined로 돌려준다.
+// 내 문제는 한 번만 내므로 풀이가 있으면 푼 것이다. 기본 문제는 다 풀면 다시 내므로 shownAt 뒤의 풀이만 센다.
+export async function resumeProblem(
+  learnerId: string,
+  problemId: string,
+  shownAt: Date | undefined,
+): Promise<ResumedProblem | undefined> {
+  if (!isUuid(problemId)) return undefined;
+  const db = getDb();
+  const [found] = await db
+    .select({ ...problemViewColumns, learnerId: quizProblem.learnerId })
+    .from(quizProblem)
+    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+    .where(eq(quizProblem.id, problemId));
+  if (!found || (found.learnerId !== null && found.learnerId !== learnerId))
+    return undefined;
+  const since =
+    found.learnerId === null && shownAt
+      ? gte(quizAttempt.answeredAt, shownAt)
+      : undefined;
+  const [attempt] = await db
+    .select({ id: quizAttempt.id })
+    .from(quizAttempt)
+    .where(
+      and(
+        eq(quizAttempt.learnerId, learnerId),
+        eq(quizAttempt.problemId, problemId),
+        since,
+      ),
+    )
+    .limit(1);
+  return { problem: toProblemView(found), solved: attempt !== undefined };
+}
 
 // 기본 문제는 이 학습자가 아직 풀지 않은 것에서 내고, 다 풀었으면 다시 전체에서 낸다.
 async function pickDefaultProblem(
