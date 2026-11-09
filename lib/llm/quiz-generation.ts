@@ -42,7 +42,10 @@ const ANSWER_SCHEMAS: Record<QuizFormat, object> = {
 };
 
 const FORMAT_RULES: Record<QuizFormat, string> = {
-  mcq: "객관식 문제다. 보기는 2개에서 4개이고, answerIndex는 정답 보기의 위치를 0부터 센 값이다.",
+  mcq: [
+    "객관식 문제다. 보기는 2개에서 4개이고, answerIndex는 정답 보기의 위치를 0부터 센 값이다.",
+    "보기 순서는 저장할 때 섞이므로, stem, hint, explanation, 보기 문장에서 다른 보기를 2번, ②, B처럼 위치로 가리키지 않고 보기 내용으로 말한다.",
+  ].join(" "),
   blank:
     "빈칸 문제다. stem에 밑줄 네 개 ____로 빈칸을 정확히 하나 두고, accepted에 맞다고 볼 답을 모두 넣는다.",
   free: "서술형 문제다. modelAnswer에 모범 답을, keyPoints에 채점할 핵심 요소를 넣는다.",
