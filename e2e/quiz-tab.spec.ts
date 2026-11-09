@@ -541,3 +541,68 @@ test("TC-257 세 문제를 풀고 결과 화면에서 새 문제 풀기를 누�
   await expect(panel.getByRole("button", { name: "AI 맞춤 문제 풀기" })).toBeVisible();
   expect(served).toBe(3);
 });
+
+test("TC-255 퀴즈 홈에서 지난 문제 보기를 누르면 푼 문제가 보이고, 거르고 펼쳐 답과 해설을 본 뒤 돌아가기로 퀴즈 홈에 와요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  const home = panel.getByRole("button", { name: "AI 맞춤 문제 풀기" });
+  const past = panel.getByRole("button", { name: "지난 문제 보기" });
+  const back = panel.getByRole("button", { name: "돌아가기" });
+  await expect(home).toBeVisible();
+
+  await past.click();
+  await expect(panel.getByText("아직 푼 확인 문제가 없어요.")).toBeVisible();
+  await expect(panel.getByText("문제를 풀면 여기에 모여요.")).toBeVisible();
+  await back.click();
+  await expect(home).toBeVisible();
+
+  await startQuiz(page);
+  for (const [index, view] of views.entries()) {
+    const card = panel.getByRole("region", { name: "퀴즈" });
+    await expect(card.getByText(view.stem)).toBeVisible();
+    await card.getByText(index === 1 ? "WHERE" : "HAVING", { exact: true }).click();
+    await card.getByRole("button", { name: "확실해요" }).click();
+    await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+    await panel.getByRole("button", { name: index === views.length - 1 ? "결과 보기" : "다음 문제" }).click();
+  }
+  await panel.getByRole("button", { name: "퀴즈 홈" }).click();
+  await past.click();
+
+  const list = panel.getByRole("list", { name: "지난 문제 목록" });
+  const items = list.getByRole("listitem");
+  await expect(items).toHaveCount(3);
+  const expected = [
+    { stem: views[2]?.stem, chip: "맞혔어요" },
+    { stem: views[1]?.stem, chip: "틀렸어요" },
+    { stem: views[0]?.stem, chip: "맞혔어요" },
+  ];
+  for (const [index, { stem, chip }] of expected.entries()) {
+    const item = items.nth(index);
+    await expect(item.getByText(stem ?? "", { exact: true })).toBeVisible();
+    await expect(item.getByText(first.title, { exact: true })).toBeVisible();
+    await expect(item.getByText("객관식", { exact: true })).toBeVisible();
+    await expect(item.getByText(chip, { exact: true })).toBeVisible();
+  }
+
+  await panel.getByRole("button", { name: "틀림", exact: true }).click();
+  await expect(items).toHaveCount(1);
+  const wrong = items.first();
+  await expect(wrong.getByText(views[1]?.stem ?? "", { exact: true })).toBeVisible();
+
+  await wrong.getByText(views[1]?.stem ?? "", { exact: true }).click();
+  await expect(wrong.getByText("내 답", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("WHERE", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("정답", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("HAVING", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("그룹 조건은 HAVING에 써요.", { exact: true })).toBeVisible();
+
+  await back.click();
+  await expect(home).toBeVisible();
+});
