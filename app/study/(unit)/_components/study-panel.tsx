@@ -1,14 +1,17 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { type QuizTab, type QuizTabEvent, advanceQuizTab, fetchProblem, settleProblem, startQuizTab } from "@/lib/quiz-tab";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
 
 const TABS = [
-  { id: "agent", label: "에이전트" },
+  { id: "agent", label: "AI 에이전트" },
   { id: "quiz", label: "퀴즈" },
 ] as const;
 
@@ -30,12 +33,25 @@ function useQuizTab() {
   return [tab, send] as const;
 }
 
-// 레이아웃에 두어 단원을 옮겨도 대화와 퀴즈가 남는다. 숨긴 탭도 그대로 두어 탭을 오가도 풀던 답과 받는 중인 답이 남는다.
+// 레이아웃에 두어 단원을 옮겨도 대화와 퀴즈가 남는다. 숨긴 탭과 닫은 패널도 그대로 두어 풀던 답과 받는 중인 답이 남는다.
 export function StudyPanel() {
   const { unitId } = useParams<{ unitId: string }>();
+  const [opened, setOpened] = useState(true);
   const [shown, setShown] = useState<TabId>("agent");
   const [quiz, sendQuiz] = useQuizTab();
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
+  const peek = useRef<HTMLButtonElement>(null);
+
+  // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 새로 보이는 버튼으로 포커스를 옮긴다.
+  function closePanel() {
+    flushSync(() => setOpened(false));
+    peek.current?.focus();
+  }
+
+  function openPanel() {
+    flushSync(() => setOpened(true));
+    tabs.current.get(shown)?.focus();
+  }
 
   function open(id: TabId) {
     setShown(id);
@@ -59,41 +75,62 @@ export function StudyPanel() {
   }
 
   return (
-    <aside aria-label="학습 패널" className="flex w-96 shrink-0 flex-col border-l">
-      <div role="tablist" className="flex border-b">
-        {TABS.map(({ id, label }, index) => (
-          <button
-            key={id}
-            ref={(element) => {
-              if (element) tabs.current.set(id, element);
-            }}
-            id={`tab-${id}`}
-            type="button"
-            role="tab"
-            aria-selected={shown === id}
-            aria-controls={`panel-${id}`}
-            tabIndex={shown === id ? 0 : -1}
-            onClick={() => open(id)}
-            onKeyDown={(event) => moveFocus(event, index)}
-            className="h-11 flex-1 border-b-2 border-transparent text-sm font-semibold text-gray aria-selected:border-ink aria-selected:text-ink"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
-        <QuestionPanel onSolveRelated={solveRelated} />
-      </div>
-      <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="min-h-0 flex-1 overflow-y-auto p-5">
-        {/* 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다. */}
-        <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
-        <QuizTabBody
-          tab={quiz}
-          onRetry={() => sendQuiz({ type: "retry" })}
-          onNext={() => sendQuiz({ type: "next", unitId })}
-        />
-      </div>
-    </aside>
+    <>
+      {!opened && (
+        <button ref={peek} type="button" aria-label="AI 패널 열기" onClick={openPanel} className="peek">
+          <span aria-hidden className="peek-bubble">
+            궁금한 거 있어?
+          </span>
+          <span className="peek-clip">
+            <span className="peek-body">
+              <Mascot size={104} />
+            </span>
+          </span>
+        </button>
+      )}
+      <aside aria-label="학습 패널" hidden={!opened} className="panel">
+        <div className="panel-head">
+          <span />
+          <div role="tablist" aria-label="학습 패널 메뉴" className="seg">
+            {TABS.map(({ id, label }, index) => (
+              <button
+                key={id}
+                ref={(element) => {
+                  if (element) tabs.current.set(id, element);
+                }}
+                id={`tab-${id}`}
+                type="button"
+                role="tab"
+                aria-selected={shown === id}
+                aria-controls={`panel-${id}`}
+                tabIndex={shown === id ? 0 : -1}
+                onClick={() => open(id)}
+                onKeyDown={(event) => moveFocus(event, index)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="panel-head-end">
+            <button type="button" aria-label="패널 닫기" title="패널 닫기" onClick={closePanel} className="head-icon">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
+          <QuestionPanel onSolveRelated={solveRelated} />
+        </div>
+        <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="min-h-0 flex-1 overflow-y-auto p-5">
+          {/* 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다. */}
+          <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
+          <QuizTabBody
+            tab={quiz}
+            onRetry={() => sendQuiz({ type: "retry" })}
+            onNext={() => sendQuiz({ type: "next", unitId })}
+          />
+        </div>
+      </aside>
+    </>
   );
 }
 
