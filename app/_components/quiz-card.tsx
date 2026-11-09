@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttemptInput } from "@/lib/quiz-attempts";
@@ -57,10 +57,12 @@ function focusOnMount(element: HTMLElement | null) {
 }
 
 // 퀴즈 탭과 꺼내 먹기가 함께 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
-export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: () => void }) {
+export function QuizCard({ problem, onGraded, onNext }: { problem: ProblemView; onGraded: () => void; onNext: () => void }) {
   const [flow, setFlow] = useState<QuizFlow>(() => startQuizFlow(problem));
   const dispatch = (...events: QuizFlowEvent[]) => setFlow((current) => events.reduce(advanceQuizFlow, current));
 
+  // 부르는 쪽이 매번 새 함수를 넘겨도 채점 요청을 다시 보내지 않게 효과의 의존성에서 뺀다.
+  const graded = useEffectEvent(onGraded);
   const grading = flow.stage === "grading" ? flow : undefined;
   useEffect(() => {
     if (!grading) return;
@@ -68,6 +70,7 @@ export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: ()
     void sendAttempt(grading.request).then((result) => {
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
+      if (result) graded();
     });
     return () => {
       active = false;
@@ -80,7 +83,7 @@ export function QuizCard({ problem, onNext }: { problem: ProblemView; onNext: ()
   }
 
   return (
-    <section aria-label="퀴즈" data-quiz-card className="flex flex-col bg-white text-ink">
+    <section aria-label="퀴즈" data-quiz-card className="flex flex-1 flex-col bg-white text-ink">
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <span className="inline-flex h-5.5 items-center rounded bg-line-2 px-2 text-xs font-semibold text-ink-2">
           {problem.conceptTitle}
@@ -230,7 +233,7 @@ function Explanation({
 }: ReturnType<typeof resultView> & { format: ProblemView["format"]; explanation: string; onNext: () => void }) {
   const right = verdict === "맞았어요";
   return (
-    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-600">
+    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="flex flex-1 flex-col rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-600">
       <dl className="mt-3 flex flex-col gap-2 text-sm">
         <div
           className={`rounded-lg border px-3.5 py-3 ${verdict === null ? "border-line" : right ? "border-green bg-green-25" : "border-red bg-red-50"}`}
@@ -254,9 +257,12 @@ function Explanation({
           <Markdown remarkPlugins={[remarkGfm]}>{explanation}</Markdown>
         </div>
       </div>
-      <button type="button" onClick={onNext} className="mt-6 h-11 w-full rounded-md bg-ink text-[15px] font-semibold text-white hover:bg-black">
-        다음 문제
-      </button>
+      {/* 해설이 짧으면 카드 아래로 밀고, 길면 스크롤 영역 아래에 붙여 버튼이 늘 패널 아래에 있다. */}
+      <div className="sticky -bottom-5 mt-auto -mb-5 bg-white pt-3 pb-5">
+        <button type="button" onClick={onNext} className="btn btn-block btn-dark h-11 text-[15px]">
+          다음 문제
+        </button>
+      </div>
     </div>
   );
 }
