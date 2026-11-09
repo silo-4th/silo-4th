@@ -171,7 +171,7 @@ flowchart LR
 | 컬럼 | 타입 | 뜻 | 근거 |
 | --- | --- | --- | --- |
 | `id` | `uuid` PK | 문제 ID예요 | |
-| `learner_id` | `uuid` FK `learners.id` | 이 학습자에게 만든 문제예요. 비어 있으면 기본 문제예요 | 꺼내 보기 문제는 학습자가 들어오기 전에 만들어요. 피그마 기록 흐름 2단계 "미리 계산" |
+| `learner_id` | `uuid` FK `learners.id` | 이 학습자에게 만든 문제예요. 비어 있으면 기본 문제예요 | 꺼내 보기 문제는 학습일이 끝난 뒤 학습자가 처음 들어올 때 만들어요. 4-104 |
 | `concept_id` | `text` NOT NULL, FK `concepts.id` | 문제가 묻는 절이에요. 단원은 `concepts.unit_id`로 구해요 | 4-82 이미 정한 것 "절 = 개념", 회의록 "단원 ID는 출제 기능을 만들 때 정해요" |
 | `source_question_id` | `uuid` FK `questions.id` | 문제를 만들 때 입력에 넣은 대화예요. 채우면 `learner_id`도 채워야 해요 | 4-82 정한 것 1 "어제 물어본 절은 그 대화를 입력에 더해서" |
 | `format` | `text` NOT NULL, `mcq` / `blank` / `free` | 객관식, 빈칸, 서술이에요. 결과 예측형은 `mcq`에 코드가 붙은 문제예요 | 회의록 "문제 유형은 데이터에는 남겨요", 4-64 착각 비율은 `mcq`, `blank`만 써요 |
@@ -221,7 +221,7 @@ DB가 거는 CHECK는 `dont_know`가 참이면 `reason_text`와 `confidence`가 
 | `id` | `uuid` PK | | |
 | `learner_id` | `uuid` NOT NULL, FK | | |
 | `source_study_day` | `date` NOT NULL | 근거가 된 학습일, 화면의 "어제"예요. `learner_id`와 함께 유니크라서 학습일마다 묶음이 하나만 생겨요 | 4-64의 `source_study_day`, 4-82 제안 "꺼내 보기는 직전 학습일", 리뷰 지적 3 |
-| `created_at` | `timestamptz` NOT NULL | 미리 계산을 마친 시각이에요 | 4-64 출제 대상 미리 계산 |
+| `created_at` | `timestamptz` NOT NULL | 세트를 만든 시각이에요 | 4-104 다음 날 첫 진입 |
 | `shown_at` | `timestamptz` | 입구 화면을 처음 보여 준 시각이에요 | 4-64 status `shown`, 피그마 W2, 리뷰 지적 2 |
 | `postponed_at` | `timestamptz` | 나중에 할게요를 누른 시각이에요 | 피그마 W2 "나중에 할게요" |
 | `started_at` | `timestamptz` | 시작하기를 누른 시각이에요 | 피그마 W2 "시작하기" |
@@ -236,7 +236,7 @@ DB가 거는 CHECK는 `dont_know`가 참이면 `reason_text`와 `confidence`가 
 | `position` | `integer` NOT NULL | 보여 줄 순서예요. `set_id`와 함께 유니크예요 | 피그마 W3 "1 / 3" |
 | `reason` | `text` NOT NULL, `read_no_question` / `asked` / `quiz` | 이 절을 낸 이유예요. 채운 절 값은 4-82가 정해지면 더해요 | 4-64의 `reason`, 4-70 결정, 피그마 W2 "넘어감", "물어봄", 리뷰 지적 9 |
 | `source_question_id` | `uuid` FK `questions.id` | 어제 물은 질문이에요. `reason`이 `asked`일 때만 채워요 | 피그마 W4 "어제 이렇게 물으셨어요", 4-69 "질문 원문으로 묻기로 했어요" |
-| `problem_id` | `uuid` NOT NULL, FK | 미리 만든 문제예요. 절은 이 문제의 `concept_id`예요 | 4-64 미리 계산 4단계 |
+| `problem_id` | `uuid` NOT NULL, FK | 세트를 만들 때 정한 문제예요. 절은 이 문제의 `concept_id`예요 | 4-104 |
 | `opened_section_at` | `timestamptz` | 결과 화면에서 그 절로 가기를 누른 시각이에요 | 피그마 기록 흐름 4단계 "답, 확신, 이동 여부를 남겨 다음 출제에 써요" |
 
 ### `section_views` (본 절 기록)
@@ -342,7 +342,7 @@ DB가 거는 CHECK는 `dont_know`가 참이면 `reason_text`와 `confidence`가 
 
 ```mermaid
 flowchart LR
-  Read["학습 화면에서 절 보기"] -->|section_views| Pre["새벽 미리 계산"]
+  Read["학습 화면에서 절 보기"] -->|section_views| Pre["다음 날 첫 진입에 세트 만들기"]
   Pre -->|recall_sets, recall_items, quiz_problems| Entry{"끝나지 않은 묶음이 있나"}
   Entry -->|없음| Study["학습 화면"]
   Entry -->|있음| W2["W2 입구, shown_at"]
@@ -373,9 +373,9 @@ flowchart LR
 ## 구현할 때 지킬 것
 
 - AI가 만든 문제는 `answer` 구조를 서버에서 검증한 뒤에만 저장해요.
-- 새벽 계산은 문제를 모두 만든 뒤 묶음과 문항을 한 트랜잭션으로 넣어요. 다시 돌려도 `(learner_id, source_study_day)` 유니크 때문에 묶음이 하나만 남아요.
-- 새벽 계산은 학습일 경계에 바로 붙여 돌리지 않아요. 경계 직전에 한 질문이 아직 `pending`이거나 절로 분류되지 않았을 수 있어서, 물어본 절이 넘어간 절로 잘못 들어가요. 정확한 시각은 4-30에서 정해요.
-- 첫 진입에 묶음이 아직 없으면 그날 꺼내 보기를 놓친 것으로 치지 않고, 다음 진입에 다시 확인해요.
+- 세트는 다음 날 첫 진입의 세트 준비 요청에서 만들어요. 문제를 모두 만든 뒤 묶음, AI가 만든 문제, 문항을 한 트랜잭션으로 넣어요. 다시 요청하거나 탭 두 개로 동시에 요청해도 `(learner_id, source_study_day)` 유니크 때문에 묶음이 하나만 남고, 진 쪽 트랜잭션은 아무것도 남기지 않아요.
+- 세트에는 끝난 학습일 기록만 넣어요. 오늘 학습일 기록은 아직 끝나지 않았으므로 넣지 않아요. 경계 직전에 한 질문이 첫 진입 때까지 절로 분류되지 않았으면 그 절은 넘어간 절로 들어갈 수 있어요.
+- AI가 문제를 만들지 못한 문항은 그 절의 기본 문제로 대신해요. 기본 문제도 없는 절은 그 문항만 빼고 세트를 만들어요. 저장 중에 실패하면 아무것도 남기지 않고, 다음 진입에 다시 만들어요.
 - 문항은 만든 뒤 고치지 않아요. 기본 문제는 고치지 않고 `retired_at`을 채운 뒤 새 행을 넣어요.
 
 ## 정할 것
