@@ -6,20 +6,28 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import { flushSync } from "react-dom";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
+import { ResultChipLabel } from "@/app/_components/result-chip";
+import type { Solved } from "@/lib/quiz-card";
 import {
   SET_SIZE,
   type ProblemResult,
+  type QuizSet,
+  type QuizSetEvent,
   type QuizTab,
-  type QuizTabEvent,
-  advanceQuizTab,
+  type SetResults,
+  advanceQuizSet,
+  clearSavedProblem,
   fetchPersonalized,
   fetchProblem,
   fetchResumedProblem,
   gaugeFilled,
   readSavedProblem,
   saveProblem,
+  setGuide,
+  setItems,
+  setTitle,
   settleProblem,
-  startQuizTab,
+  startQuizSet,
 } from "@/lib/quiz-tab";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
@@ -31,31 +39,42 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// 상태가 바뀔 때만 요청하고 기억한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
+// 탭 상태가 바뀔 때만 요청한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
+// 문제를 띄운 동안에는 칩이 바뀔 때마다 기억해, 새로고침 뒤에도 결과에 앞서 푼 문제가 나온다.
 // 이어 풀기 응답이 다시 새 문제 요청으로 이어지므로, 응답을 반영할 때도 지금 상태를 ref로 읽어 바로 다음 요청을 보낸다.
-function useQuizTab(learnerId: string) {
-  const [tab, setTab] = useState<QuizTab>(startQuizTab);
-  const current = useRef(tab);
+function useQuizSet(learnerId: string) {
+  const [set, setSet] = useState<QuizSet>(startQuizSet);
+  const current = useRef(set);
+  // 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
+  const shownAt = useRef<string>(undefined);
 
-  // shownAt은 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
-  function commit(next: QuizTab, shownAt?: string) {
+  function commit(next: QuizSet) {
+    const { tab: before, results: earlier } = current.current;
     current.current = next;
-    setTab(next);
-    if (next.stage === "problem") saveProblem(learnerId, { problemId: next.problem.id, number: next.number, shownAt });
-    if (next.stage === "loading") void fetchProblem(next).then((served) => settle(next, served?.body, served?.servedAt));
-    if (next.stage === "resuming") void fetchResumedProblem(next).then((problem) => settle(next, problem, next.shownAt));
+    setSet(next);
+    const { tab, results } = next;
+    // 채점을 받지 못한 칩은 문제를 넘길 때 생기므로, 떠나는 문제의 자리에 함께 남겨야 새로고침 뒤 결과에서 빠지지 않는다.
+    const saving = tab.stage === "problem" ? tab : before.stage === "problem" && results !== earlier ? before : undefined;
+    if (saving) saveProblem(learnerId, { problemId: saving.problem.id, number: saving.number, shownAt: shownAt.current, results });
+    if (tab === before) return;
+    // 결과에서 나오면 새 묶음이다. 새 문제를 받기 전에 새로고침해도 지난 묶음의 마지막 문제로 결과를 다시 띄우지 않는다.
+    if (before.stage === "result") clearSavedProblem(learnerId);
+    if (tab.stage === "loading") void fetchProblem(tab).then((served) => settle(tab, served?.body, served?.servedAt));
+    if (tab.stage === "resuming") void fetchResumedProblem(tab).then((problem) => settle(tab, problem, tab.shownAt));
   }
 
-  function settle(requested: QuizTab, problem: ProblemResult, shownAt?: string) {
-    const next = settleProblem(current.current, requested, problem);
-    if (next !== current.current) commit(next, shownAt);
+  function settle(requested: QuizTab, problem: ProblemResult, servedAt?: string) {
+    const tab = settleProblem(current.current.tab, requested, problem);
+    if (tab === current.current.tab) return;
+    if (tab.stage === "problem") shownAt.current = servedAt;
+    commit({ ...current.current, tab });
   }
 
-  function send(event: QuizTabEvent) {
-    const next = advanceQuizTab(current.current, event);
+  function send(event: QuizSetEvent) {
+    const next = advanceQuizSet(current.current, event);
     if (next !== current.current) commit(next);
   }
-  return [tab, send] as const;
+  return [set, send] as const;
 }
 
 // 레이아웃에 두어 단원을 옮겨도 대화와 퀴즈가 남는다. 숨긴 탭과 닫은 패널도 그대로 두어 풀던 답과 받는 중인 답이 남는다.
@@ -63,7 +82,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   const { unitId } = useParams<{ unitId: string }>();
   const [opened, setOpened] = useState(true);
   const [shown, setShown] = useState<TabId>("agent");
-  const [quiz, sendQuiz] = useQuizTab(learnerId);
+  const [quiz, sendQuiz] = useQuizSet(learnerId);
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
   const peek = useRef<HTMLButtonElement>(null);
 
@@ -149,7 +168,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
         </div>
         <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="flex min-h-0 flex-1 flex-col">
           <QuizTabBody
-            tab={quiz}
+            set={quiz}
             unitId={unitId}
             active={opened && shown === "quiz"}
             guide={
@@ -162,7 +181,13 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
               tabs.current.get("quiz")?.focus();
             }}
             onRetry={() => sendQuiz({ type: "retry" })}
-            onNext={() => sendQuiz({ type: "next", unitId })}
+            onGraded={(solved) => sendQuiz({ type: "graded", solved })}
+            onNext={(solved) => sendQuiz({ type: "next", unitId, solved })}
+            onLeaveResult={(leave) => {
+              // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
+              sendQuiz(leave === "home" ? { type: "home" } : { type: "restart", unitId });
+              tabs.current.get("quiz")?.focus();
+            }}
           />
         </div>
       </aside>
@@ -170,12 +195,22 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   );
 }
 
-type QuizTabBodyProps = { tab: QuizTab; unitId: string; active: boolean; guide: ReactNode; onStart: () => void; onRetry: () => void; onNext: () => void };
+type Leave = "restart" | "home";
 
-function QuizTabBody({ tab, unitId, active, guide, onStart, onRetry, onNext }: QuizTabBodyProps) {
-  // 채점을 받은 탭 상태다. 기본 문제는 같은 ID로 다시 나올 수 있어, ID 대신 문제를 띄울 때마다 새로 생기는 상태로 비교한다.
-  const [gradedTab, setGradedTab] = useState<QuizTab>();
-  const graded = gradedTab === tab;
+type QuizTabBodyProps = {
+  set: QuizSet;
+  unitId: string;
+  active: boolean;
+  guide: ReactNode;
+  onStart: () => void;
+  onRetry: () => void;
+  onGraded: (solved: Solved) => void;
+  onNext: (solved: Solved) => void;
+  onLeaveResult: (leave: Leave) => void;
+};
+
+function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, onNext, onLeaveResult }: QuizTabBodyProps) {
+  const { tab, results } = set;
   const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
   return (
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
@@ -203,10 +238,57 @@ function QuizTabBody({ tab, unitId, active, guide, onStart, onRetry, onNext }: Q
       )}
       {tab.stage === "problem" && (
         <>
-          <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, graded)} />
-          <QuizCard key={tab.problem.id} problem={tab.problem} onGraded={() => setGradedTab(tab)} onNext={onNext} pinNext />
+          {/* 관련 문제가 자리를 바꾸면 그 번호의 칸을 비우므로, 칸이 차 있으면 지금 문제를 채점받은 것이다. */}
+          <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, Boolean(results[tab.number - 1]))} />
+          <QuizCard
+            key={tab.problem.id}
+            problem={tab.problem}
+            onGraded={onGraded}
+            onNext={onNext}
+            nextLabel={tab.number >= SET_SIZE ? "결과 보기" : undefined}
+            pinNext
+          />
         </>
       )}
+      {tab.stage === "result" && <QuizResult results={results} onLeave={onLeaveResult} />}
+    </div>
+  );
+}
+
+// 누른 결과 보기 버튼이 사라지므로, 키보드와 스크린리더 사용자가 결과를 바로 읽도록 제목으로 포커스를 옮긴다.
+// 이어 풀기로 결과가 뜰 때는 패널 밖에서 읽던 자리를 빼앗지 않는다.
+function focusHeading(element: HTMLHeadingElement | null) {
+  if (!element) return;
+  const focused = element.ownerDocument.activeElement;
+  const stayed = !focused || focused === element.ownerDocument.body || element.closest('[role="tabpanel"]')?.contains(focused);
+  if (stayed) element.focus();
+}
+
+function QuizResult({ results, onLeave }: { results: SetResults; onLeave: (leave: Leave) => void }) {
+  return (
+    <div className="flex flex-col">
+      <h2 ref={focusHeading} tabIndex={-1} className="text-[21px] leading-snug font-bold tracking-tight outline-none">
+        {setTitle(results)}
+      </h2>
+      <ol className="mt-5 flex flex-col gap-2">
+        {setItems(results).map((slot, index) => (
+          <li key={index} className="card flex items-center justify-between gap-3">
+            <span className="text-[15px] font-semibold">
+              {index + 1}. {slot.conceptTitle}
+            </span>
+            <ResultChipLabel chip={slot.chip} />
+          </li>
+        ))}
+      </ol>
+      <p className="mt-4 text-sm leading-relaxed text-gray">{setGuide(results)}</p>
+      <div className="mt-6 flex flex-col gap-2">
+        <button type="button" onClick={() => onLeave("restart")} className="btn btn-dark btn-lg btn-block">
+          새 문제 풀기
+        </button>
+        <button type="button" onClick={() => onLeave("home")} className="btn btn-lg btn-block">
+          퀴즈 홈
+        </button>
+      </div>
     </div>
   );
 }

@@ -11,6 +11,9 @@ export function shownStem(stem: string): string {
   return stem.replaceAll("____", BLANK_SHOWN);
 }
 
+// 다음으로 넘어갈 때 부르는 쪽에 넘기는 낸 답이다. 채점을 받지 못한 채 넘어가면 result가 없다.
+export type Solved = { submitted: AttemptInput; result?: AttemptResult };
+
 export type ResultView = {
   verdict: "맞았어요" | "틀렸어요" | null;
   correctAnswers: string[];

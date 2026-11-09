@@ -469,3 +469,77 @@ test("TC-238 이 단원에서 본 절도 대화도 없는 학습자는 퀴즈 �
 
   await expect(quizPanel(page).getByText("아직 나눈 대화가 없어서 기출 문제로 준비했어요")).toBeVisible();
 });
+
+async function solveSet(page: Page, views: ProblemView[]) {
+  const panel = quizPanel(page);
+  for (const [index, view] of views.entries()) {
+    const card = panel.getByRole("region", { name: "퀴즈" });
+    await expect(card.getByText(view.stem)).toBeVisible();
+    await card.getByText("HAVING", { exact: true }).click();
+    await card.getByRole("button", { name: "확실해요" }).click();
+    await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+    if (index === views.length - 1) break;
+    await expect(panel.getByRole("button", { name: "결과 보기" })).toHaveCount(0);
+    await panel.getByRole("button", { name: "다음 문제" }).click();
+  }
+  await expect(panel.getByRole("button", { name: "다음 문제" })).toHaveCount(0);
+  await panel.getByRole("button", { name: "결과 보기" }).click();
+}
+
+async function storeProblems(learnerId: string, unitId: string, count: number) {
+  const saved = await firstConcept(unitId);
+  const views: ProblemView[] = [];
+  for (let index = 1; index <= count; index += 1) views.push(await storeProblem(learnerId, saved, `그룹 조건 문제 ${index}`));
+  return views;
+}
+
+test("TC-248 퀴즈 탭에서 세 문제를 풀면 마지막 문제에 결과 보기가 보이고, 누르면 제목, 문항별 칩, 안내, 새 문제 풀기와 퀴즈 홈 버튼이 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await solveSet(page, views);
+
+  const panel = quizPanel(page);
+  await expect(panel.getByRole("heading", { name: "3개 모두 맞혔어요" })).toBeVisible();
+  await expect(panel.getByText("맞혔어요", { exact: true })).toHaveCount(3);
+  await expect(panel.getByText("이 흐름 그대로 다음 단원으로 가도 좋아요.")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "새 문제 풀기" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "퀴즈 홈" })).toBeVisible();
+  expect(served).toBe(3);
+});
+
+test("TC-249 퀴즈 탭 결과 화면에서 새 문제 풀기를 누르면 새 묶음의 첫 문제가 뜨고, 퀴즈 홈을 누르면 퀴즈 홈이 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 6);
+  const bodies: unknown[] = [];
+  await page.route(PROBLEMS_PATH, (route) => {
+    const view = views[bodies.length];
+    bodies.push(route.request().postDataJSON());
+    return route.fulfill({ json: view });
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await solveSet(page, views.slice(0, 3));
+
+  const panel = quizPanel(page);
+  await panel.getByRole("button", { name: "새 문제 풀기" }).click();
+  await expect(panel.getByText(views[3]?.stem ?? "")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
+  await expect(panel.getByRole("progressbar", { name: "문제 진행" })).toHaveAttribute("aria-valuenow", "0");
+  expect(bodies).toHaveLength(4);
+  expect(bodies[3]).toEqual({ unitId: first.id });
+
+  await solveSet(page, views.slice(3, 6));
+  await panel.getByRole("button", { name: "퀴즈 홈" }).click();
+  await expect(panel.getByRole("button", { name: "AI 맞춤 문제 풀기" })).toBeVisible();
+  expect(bodies).toHaveLength(6);
+});

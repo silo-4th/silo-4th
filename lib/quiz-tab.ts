@@ -1,4 +1,6 @@
+import type { Solved } from "@/lib/quiz-card";
 import type { ProblemView, ResumedProblem } from "@/lib/quiz-problems";
+import { RESULT_CHIPS, type ResultChip, chipOf, needsReview, resultTitle } from "@/lib/recall-result";
 
 // 생성은 30초까지 걸릴 수 있다. 응답이 오지 않는 요청을 끝없이 기다리지 않게 넉넉히 기다린 뒤 실패로 본다.
 export const PROBLEM_TIMEOUT_MS = 45_000;
@@ -9,7 +11,13 @@ export type ProblemAsk = { unitId: string } | { questionId: string };
 // 새로고침이나 새 방문 뒤에도 이어 풀도록 브라우저에 남겨 두는 풀던 문제다.
 // shownAt은 서버가 문제를 내준 시각이다. 서버는 다시 낸 기본 문제의 예전 풀이를 이 시각으로 걸러 낸다.
 // 풀이 시각과 같은 서버 시계로 비교해야 하므로 브라우저 시계를 쓰지 않는다.
-export type SavedProblem = { problemId: string; number: number; shownAt?: string };
+// results는 묶음에서 채점받은 칩이다. 새로고침 뒤에도 결과 화면에 앞서 푼 문제가 나오도록 함께 남긴다.
+export type SavedProblem = { problemId: string; number: number; shownAt?: string; results?: SetResults };
+
+export type SlotResult = { conceptTitle: string; chip: ResultChip };
+
+// 번호마다 한 칸이다. 관련 문제가 그 번호의 문제를 바꾸면 칸을 비우고, 바뀐 문제를 채점받으면 다시 채운다.
+export type SetResults = readonly (SlotResult | null)[];
 
 // 한 브라우저를 여러 학습자가 쓸 수 있어 학습자마다 따로 기억한다.
 function savedProblemKey(learnerId: string) {
@@ -24,7 +32,8 @@ export type QuizTab =
   | ({ stage: "loading"; number: number } & ProblemAsk)
   | ({ stage: "failed"; number: number } & ProblemAsk)
   | { stage: "resuming"; number: number; problemId: string; shownAt?: string; unitId: string }
-  | { stage: "problem"; number: number; problem: ProblemView };
+  | { stage: "problem"; number: number; problem: ProblemView }
+  | { stage: "result" };
 
 export type QuizTabEvent =
   | { type: "enter"; unitId: string; saved?: SavedProblem }
@@ -33,9 +42,13 @@ export type QuizTabEvent =
   | { type: "failed" }
   | { type: "solved" }
   | { type: "retry" }
-  | { type: "next"; unitId: string };
+  | { type: "graded"; solved: Solved }
+  | { type: "next"; unitId: string; solved?: Solved }
+  | { type: "restart"; unitId: string }
+  | { type: "home" };
 
-// 문제 생성 비용 때문에 세 문제를 한 묶음으로 센다. 세 문제를 넘겨도 카운트는 계속 늘고, 게이지는 가득 찬 채로 둔다.
+// 문제 생성 비용 때문에 세 문제를 한 묶음으로 센다. 마지막 문제를 넘기면 결과를 보여 준다.
+// 예전에 세 문제를 넘겨 기억해 둔 카운트가 있을 수 있어, 게이지는 가득 찬 채로 두고 그 문제를 넘기면 결과로 간다.
 export const SET_SIZE = 3;
 
 export function gaugeFilled(number: number, graded: boolean): number {
@@ -56,7 +69,8 @@ function askOf(tab: ProblemAsk): ProblemAsk {
 export function advanceQuizTab(tab: QuizTab, event: QuizTabEvent): QuizTab {
   if (event.type === "related") {
     if (tab.stage === "loading" && "questionId" in tab && tab.questionId === event.questionId) return tab;
-    return { stage: "loading", number: tab.stage === "idle" ? 1 : tab.number, questionId: event.questionId };
+    const number = tab.stage === "idle" || tab.stage === "result" ? 1 : tab.number;
+    return { stage: "loading", number, questionId: event.questionId };
   }
   switch (tab.stage) {
     case "idle":
@@ -67,7 +81,8 @@ export function advanceQuizTab(tab: QuizTab, event: QuizTabEvent): QuizTab {
     // 이미 푼 문제면 다음 문제를, 불러오지 못하면 같은 카운트의 새 문제를 열린 단원으로 만든다.
     case "resuming":
       if (event.type === "loaded") return { stage: "problem", number: tab.number, problem: event.problem };
-      if (event.type === "solved") return { stage: "loading", number: tab.number + 1, unitId: tab.unitId };
+      if (event.type === "solved")
+        return tab.number >= SET_SIZE ? { stage: "result" } : { stage: "loading", number: tab.number + 1, unitId: tab.unitId };
       return event.type === "failed" ? { stage: "loading", number: tab.number, unitId: tab.unitId } : tab;
     case "loading":
       if (event.type === "loaded") return { stage: "problem", number: tab.number, problem: event.problem };
@@ -75,8 +90,59 @@ export function advanceQuizTab(tab: QuizTab, event: QuizTabEvent): QuizTab {
     case "failed":
       return event.type === "retry" ? { stage: "loading", number: tab.number, ...askOf(tab) } : tab;
     case "problem":
-      return event.type === "next" ? { stage: "loading", number: tab.number + 1, unitId: event.unitId } : tab;
+      if (event.type !== "next") return tab;
+      return tab.number >= SET_SIZE ? { stage: "result" } : { stage: "loading", number: tab.number + 1, unitId: event.unitId };
+    case "result":
+      if (event.type === "restart") return { stage: "loading", number: 1, unitId: event.unitId };
+      return event.type === "home" ? { stage: "idle" } : tab;
   }
+}
+
+// 탭 상태와 묶음 결과를 함께 옮긴다. 탭 상태가 바뀔 때만 문제를 요청하므로, 칩만 바뀐 상태는 요청을 늘리지 않는다.
+export type QuizSet = { tab: QuizTab; results: SetResults };
+export type QuizSetEvent = QuizTabEvent;
+
+export function startQuizSet(): QuizSet {
+  return { tab: startQuizTab(), results: [] };
+}
+
+function withSlot(results: SetResults, number: number, slot: SlotResult | null): SetResults {
+  const next = Array.from({ length: Math.max(results.length, number) }, (_, index) => results[index] ?? null);
+  next[number - 1] = slot;
+  return next;
+}
+
+// 퀴즈 홈이나 결과에서 나가면 새 묶음이다. 기억해 둔 문제로 이어 풀 때만 남겨 둔 칩을 되살린다.
+// 칩은 채점받을 때 남기고, 채점을 받지 못한 채 넘길 때도 낸 답으로 남긴다.
+function resultsAfter({ tab, results }: QuizSet, next: QuizTab, event: QuizSetEvent): SetResults {
+  if (tab.stage === "idle" || tab.stage === "result") {
+    if (next === tab) return results;
+    return event.type === "enter" ? (event.saved?.results ?? []) : [];
+  }
+  if (event.type === "related") return next === tab || !("number" in next) ? results : withSlot(results, next.number, null);
+  const solved = event.type === "graded" || event.type === "next" ? event.solved : undefined;
+  if (tab.stage !== "problem" || !solved) return results;
+  return withSlot(results, tab.number, { conceptTitle: tab.problem.conceptTitle, chip: chipOf(solved.submitted, solved.result) });
+}
+
+export function advanceQuizSet(set: QuizSet, event: QuizSetEvent): QuizSet {
+  const tab = advanceQuizTab(set.tab, event);
+  const results = resultsAfter(set, tab, event);
+  return tab === set.tab && results === set.results ? set : { tab, results };
+}
+
+export function setItems(results: SetResults): SlotResult[] {
+  return results.filter((slot) => slot !== null);
+}
+
+export function setTitle(results: SetResults): string {
+  return resultTitle(setItems(results), "퀴즈를 마쳤어요");
+}
+
+export function setGuide(results: SetResults): string {
+  return needsReview(setItems(results))
+    ? "헷갈리거나 틀린 개념은 본문에서 한 번 더 읽어 보면 좋아요."
+    : "이 흐름 그대로 다음 단원으로 가도 좋아요.";
 }
 
 // 응답은 그 요청을 보낸 loading 상태가 아직 화면에 있을 때만 반영한다.
@@ -135,12 +201,34 @@ export function readSavedProblem(learnerId: string): SavedProblem | undefined {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(savedProblemKey(learnerId)) ?? "null");
     if (typeof saved !== "object" || saved === null) return undefined;
-    const { problemId, number, shownAt } = saved as Record<string, unknown>;
+    const { problemId, number, shownAt, results } = saved as Record<string, unknown>;
     if (typeof problemId !== "string" || !Number.isInteger(number) || Number(number) < 1) return undefined;
-    return { problemId, number: Number(number), ...(typeof shownAt === "string" && { shownAt }) };
+    const parsed = parseResults(results);
+    return { problemId, number: Number(number), ...(typeof shownAt === "string" && { shownAt }), ...(parsed && { results: parsed }) };
   } catch {
     return undefined;
   }
+}
+
+function parseSlot(slot: unknown): SlotResult | null | undefined {
+  if (slot === null) return null;
+  if (typeof slot !== "object") return undefined;
+  const { conceptTitle, chip } = slot as Record<string, unknown>;
+  const known = RESULT_CHIPS.find((candidate) => candidate === chip);
+  return typeof conceptTitle === "string" && known ? { conceptTitle, chip: known } : undefined;
+}
+
+// 칩 하나라도 읽지 못하면 결과가 어긋나므로 통째로 버린다.
+function parseResults(results: unknown): SetResults | undefined {
+  if (!Array.isArray(results)) return undefined;
+  const slots = results.map(parseSlot);
+  return slots.every((slot) => slot !== undefined) ? slots : undefined;
+}
+
+export function clearSavedProblem(learnerId: string) {
+  try {
+    localStorage.removeItem(savedProblemKey(learnerId));
+  } catch {}
 }
 
 export function saveProblem(learnerId: string, saved: SavedProblem) {

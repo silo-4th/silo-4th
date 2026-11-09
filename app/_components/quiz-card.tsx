@@ -3,8 +3,8 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AttemptInput, AttemptResult } from "@/lib/quiz-attempts";
-import { resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
+import type { AttemptInput } from "@/lib/quiz-attempts";
+import { type Solved, resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
 import {
   MAX_ANSWER_LENGTH,
   type ProblemStage,
@@ -56,9 +56,6 @@ function focusOnMount(element: HTMLElement | null) {
   if (stayed) element.focus();
 }
 
-// 다음으로 넘어갈 때 부르는 쪽에 낸 답을 넘긴다. 채점을 받지 못한 채 넘어가면 result가 없다.
-export type Solved = { submitted: AttemptInput; result?: AttemptResult };
-
 type QuizCardProps = {
   problem: ProblemView;
   onNext: (solved: Solved) => void;
@@ -67,8 +64,8 @@ type QuizCardProps = {
   onSkip?: () => void;
   // 꺼내 먹기의 마지막 문항처럼 다음 버튼이 다음 문제로 가지 않을 때 넘긴다.
   nextLabel?: string;
-  // 퀴즈 탭이 진행 게이지를 채우려고 넘긴다.
-  onGraded?: () => void;
+  // 퀴즈 탭이 진행 게이지를 채우고 묶음 결과에 칩을 기억하려고 넘긴다.
+  onGraded?: (solved: Solved) => void;
   // 퀴즈 탭처럼 p-5 스크롤 영역 안에 둘 때, 다음 버튼을 그 영역 아래에 붙인다.
   pinNext?: boolean;
 };
@@ -79,7 +76,7 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
   const dispatch = (...events: QuizFlowEvent[]) => setFlow((current) => events.reduce(advanceQuizFlow, current));
 
   // 부르는 쪽이 매번 새 함수를 넘겨도 채점 요청을 다시 보내지 않게 효과의 의존성에서 뺀다.
-  const graded = useEffectEvent(() => onGraded?.());
+  const graded = useEffectEvent((solved: Solved) => onGraded?.(solved));
   const grading = flow.stage === "grading" ? flow : undefined;
   useEffect(() => {
     if (!grading) return;
@@ -87,7 +84,7 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
     void sendAttempt(recallItemId ? { ...grading.request, recallItemId } : grading.request).then((result) => {
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
-      if (result) graded();
+      if (result) graded({ submitted: grading.request, result });
     });
     return () => {
       active = false;
