@@ -3,7 +3,7 @@ import { expect, type Page } from "@playwright/test";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { concept, questionConcept, quizAttempt, quizProblem } from "@/lib/db/schema";
 import type { ProblemView } from "@/lib/quiz-problems";
-import { db, firstUnits, saveAnswered, test } from "./fixtures";
+import { createLearner, daysFromNow, db, deleteLearner, firstUnits, saveAnswered, test } from "./fixtures";
 
 const PROBLEMS_PATH = "**/api/quiz-problems";
 
@@ -225,4 +225,162 @@ test("TC-192 대화 중 관련 문제 풀어보기를 누르면 퀴즈 탭으로
   releaseRelated();
   await expect(panel.getByText(relatedProblem.stem)).toBeVisible();
   await expect(panel.getByText("1 / 5")).toBeVisible();
+});
+
+async function firstConcept(unitId: string) {
+  const [found] = await db
+    .select({ id: concept.id, title: concept.title })
+    .from(concept)
+    .where(eq(concept.unitId, unitId))
+    .orderBy(asc(concept.id))
+    .limit(1);
+  if (!found) throw new Error("테스트 DB의 단원에 개념이 있어야 한다.");
+  return found;
+}
+
+async function storeProblem(learnerId: string, saved: { id: string; title: string }, stem: string): Promise<ProblemView> {
+  const choices = ["WHERE", "HAVING", "ORDER BY", "LIMIT"];
+  const [stored] = await db
+    .insert(quizProblem)
+    .values({
+      learnerId,
+      conceptId: saved.id,
+      format: "mcq",
+      stem,
+      answer: { choices: choices.map((text) => ({ text })), answerIndex: 1 },
+      hint: "그룹을 만든 뒤에 걸러요.",
+      explanation: "그룹 조건은 HAVING에 써요.",
+    })
+    .returning();
+  if (!stored) throw new Error("문제를 넣지 못했다.");
+  return { id: stored.id, format: "mcq", conceptId: saved.id, conceptTitle: saved.title, stem, hint: stored.hint, choices };
+}
+
+test("TC-196 문제를 풀다가 새로고침해도 같은 문제와 카운트가 이어서 나오고 문제를 새로 만들지 않아요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const view = await storeProblem(learnerId, await firstConcept(first.id), "GROUP BY로 묶은 뒤 그룹 조건은 어디에 쓰나요?");
+  let requests = 0;
+  await page.route(PROBLEMS_PATH, (route) => {
+    requests += 1;
+    return route.fulfill({ json: view });
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  await expect(panel.getByText(view.stem)).toBeVisible();
+  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await panel.getByText("HAVING", { exact: true }).click();
+
+  await page.reload();
+  await tab(page, "퀴즈").click();
+
+  await expect(panel.getByText(view.stem)).toBeVisible();
+  await expect(panel.getByText("1 / 5")).toBeVisible();
+  expect(requests).toBe(1);
+});
+
+test("TC-197 문제를 제출한 뒤 새로고침하면 그 문제 대신 열린 단원으로 다음 문제를 만들고 카운트가 하나 늘어요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const view = await storeProblem(learnerId, await firstConcept(first.id), "GROUP BY로 묶은 뒤 그룹 조건은 어디에 쓰나요?");
+  const next = sampleProblem("WHERE와 HAVING의 차이는 무엇인가요?");
+  const bodies: unknown[] = [];
+  await page.route(PROBLEMS_PATH, (route) => {
+    bodies.push(route.request().postDataJSON());
+    return route.fulfill({ json: bodies.length === 1 ? view : next });
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  await expect(panel.getByText(view.stem)).toBeVisible();
+  await expect(panel.getByText("1 / 5")).toBeVisible();
+
+  await db.insert(quizAttempt).values({
+    id: randomUUID(),
+    learnerId,
+    problemId: view.id,
+    studyDay: daysFromNow(0),
+    chosenIndex: 1,
+    confidence: "sure",
+    isCorrect: true,
+    appVersion: "e2e",
+  });
+
+  await page.reload();
+  await tab(page, "퀴즈").click();
+
+  await expect(panel.getByText(next.stem)).toBeVisible();
+  await expect(panel.getByText("2 / 5")).toBeVisible();
+  expect(bodies).toEqual([{ unitId: first.id }, { unitId: first.id }]);
+});
+
+test("TC-198 문제 ID로 요청하면 정답과 해설을 뺀 내 문제와 기본 문제는 받고, 다른 학습자의 문제는 받지 못해요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const saved = await firstConcept(first.id);
+  const mine = await storeProblem(learnerId, saved, "내 문제예요.");
+  const [shared] = await db
+    .select({ id: quizProblem.id, format: quizProblem.format, conceptId: quizProblem.conceptId, conceptTitle: concept.title, stem: quizProblem.stem, hint: quizProblem.hint, answer: quizProblem.answer })
+    .from(quizProblem)
+    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+    .where(and(isNull(quizProblem.learnerId), isNull(quizProblem.retiredAt), eq(concept.unitId, first.id)))
+    .limit(1);
+  if (!shared) throw new Error("테스트 DB의 첫 단원에 기본 문제가 있어야 한다.");
+  const { answer, ...sharedView } = shared;
+  const expectedShared: ProblemView = "choices" in answer ? { ...sharedView, choices: answer.choices.map((choice) => choice.text) } : sharedView;
+
+  const otherLearnerId = await createLearner();
+  try {
+    const others = await storeProblem(otherLearnerId, saved, "다른 학습자의 문제예요.");
+
+    const ownResponse = await page.request.get(`/api/quiz-problems/${mine.id}`);
+    expect(ownResponse.status()).toBe(200);
+    expect(((await ownResponse.json()) as { problem: unknown }).problem).toEqual(mine);
+
+    const sharedResponse = await page.request.get(`/api/quiz-problems/${shared.id}`);
+    expect(sharedResponse.status()).toBe(200);
+    expect(((await sharedResponse.json()) as { problem: unknown }).problem).toEqual(expectedShared);
+
+    const othersResponse = await page.request.get(`/api/quiz-problems/${others.id}`);
+    expect(othersResponse.status()).toBe(404);
+  } finally {
+    await deleteLearner(otherLearnerId);
+  }
+});
+
+test("TC-213 다시 낸 기본 문제는 문제를 내준 시각 뒤의 풀이만 푼 것으로 봐요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const [shared] = await db
+    .select({ id: quizProblem.id })
+    .from(quizProblem)
+    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+    .where(and(isNull(quizProblem.learnerId), isNull(quizProblem.retiredAt), eq(concept.unitId, first.id)))
+    .limit(1);
+  if (!shared) throw new Error("테스트 DB의 첫 단원에 기본 문제가 있어야 한다.");
+
+  const answeredAt = new Date();
+  await db.insert(quizAttempt).values({
+    id: randomUUID(),
+    learnerId,
+    problemId: shared.id,
+    studyDay: daysFromNow(0),
+    chosenIndex: 0,
+    confidence: "sure",
+    isCorrect: false,
+    answeredAt,
+    appVersion: "e2e",
+  });
+
+  async function solvedWhenShownAt(shownAt: Date) {
+    const response = await page.request.get(`/api/quiz-problems/${shared?.id}?${new URLSearchParams({ shownAt: shownAt.toISOString() })}`);
+    expect(response.status()).toBe(200);
+    return ((await response.json()) as { solved: boolean }).solved;
+  }
+
+  expect(await solvedWhenShownAt(new Date(answeredAt.getTime() - 60_000))).toBe(true);
+  expect(await solvedWhenShownAt(new Date(answeredAt.getTime() + 60_000))).toBe(false);
 });
