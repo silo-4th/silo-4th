@@ -10,6 +10,8 @@ import {
   questionSession,
   quizAttempt,
   quizProblem,
+  recallItem,
+  recallSet,
   sectionView,
   session,
   unit,
@@ -46,14 +48,17 @@ export async function createLearner(consented = true) {
   return created.id;
 }
 
-// 질문, 퀴즈, 본 절 기록은 학습자를 지워도 함께 지워지지 않으므로 먼저 지운다.
+// 질문, 퀴즈, 꺼내 먹기, 본 절 기록은 학습자를 지워도 함께 지워지지 않으므로 먼저 지운다.
 // 화면을 닫을 때 보낸 본 절 기록이 정리 중에 도착할 수 있다. 학습자 줄을 먼저 잠가 그 기록이 끝난 뒤에 함께 지운다.
 export async function deleteLearner(learnerId: string) {
   const asked = db.select({ id: question.id }).from(question).where(eq(question.learnerId, learnerId));
+  const recallSets = db.select({ id: recallSet.id }).from(recallSet).where(eq(recallSet.learnerId, learnerId));
   await db.batch([
     db.select({ id: learner.id }).from(learner).where(eq(learner.id, learnerId)).for("update"),
     db.delete(sectionView).where(eq(sectionView.learnerId, learnerId)),
     db.delete(quizAttempt).where(eq(quizAttempt.learnerId, learnerId)),
+    db.delete(recallItem).where(inArray(recallItem.setId, recallSets)),
+    db.delete(recallSet).where(eq(recallSet.learnerId, learnerId)),
     db.delete(quizProblem).where(eq(quizProblem.learnerId, learnerId)),
     db.delete(questionConcept).where(inArray(questionConcept.questionId, asked)),
     db.delete(message).where(inArray(message.questionId, asked)),
