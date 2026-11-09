@@ -231,20 +231,76 @@ describe("꺼내 먹기 진행 기록", () => {
     expect((await setRow(set.id)).shownAt).not.toBeNull();
   });
 
-  it("TC-160 이미 띄운 세트와 오늘 학습일로 만든 세트는 돌려주지 않고 아무것도 바꾸지 않아요", async () => {
-    const shown = await loginConsented();
+  it("TC-232 띄웠지만 마치지도 미루지도 않은 세트는 다시 요청하면 같은 세트를 돌려주고, 띄운 시각은 처음 값을 유지해요", async () => {
+    const { headers, learnerId } = await loginConsented();
     const shownAt = new Date(Date.now() - 60_000);
-    const { set: shownSet } = await newSet(shown.learnerId, yesterday(), { shownAt });
+    const { set, items } = await newSet(learnerId, yesterday(), { shownAt });
+
+    const body = await todayBody(await requestToday({ headers }));
+
+    expect(body.set?.id).toBe(set.id);
+    expect(body.set?.items.map((item) => item.id)).toEqual(items.map((item) => item.id));
+    expect((await setRow(set.id)).shownAt).toEqual(shownAt);
+  });
+
+  it("TC-233 마친 세트와 오늘 학습일로 만든 세트는 돌려주지 않고 아무것도 바꾸지 않아요", async () => {
+    const done = await loginConsented();
+    const shownAt = new Date(Date.now() - 60_000);
+    const { set: doneSet } = await newSet(done.learnerId, yesterday(), {
+      shownAt,
+      startedAt: new Date(Date.now() - 50_000),
+      completedAt: new Date(Date.now() - 40_000),
+    });
     const tomorrow = await loginConsented();
     const { set: tomorrowSet } = await newSet(tomorrow.learnerId, today());
 
-    const shownBody = await todayBody(await requestToday({ headers: shown.headers }));
+    const doneBody = await todayBody(await requestToday({ headers: done.headers }));
     const tomorrowBody = await todayBody(await requestToday({ headers: tomorrow.headers }));
 
-    expect(shownBody.set).toBeNull();
+    expect(doneBody.set).toBeNull();
     expect(tomorrowBody.set).toBeNull();
-    expect((await setRow(shownSet.id)).shownAt).toEqual(shownAt);
+    expect((await setRow(doneSet.id)).shownAt).toEqual(shownAt);
     expect((await setRow(tomorrowSet.id)).shownAt).toBeNull();
+  });
+
+  it("TC-234 시작한 세트를 다시 요청하면 시작했다는 것과 이미 푼 문항의 내 답과 채점 결과를 함께 받고, 풀지 않은 문항의 정답은 받지 않아요", async () => {
+    const { headers, learnerId } = await loginConsented();
+    const { set, items } = await newSet(learnerId, yesterday(), {}, ["mcq", "mcq"]);
+    const [first, second] = items;
+    if (!first || !second) throw new Error("문항이 2개여야 한다.");
+    await requestToday({ headers });
+    await sendEvent(set.id, "start", { headers });
+    const solved = await sendAttempt(
+      {
+        attemptId: randomUUID(),
+        problemId: first.problemId,
+        recallItemId: first.id,
+        chosenIndex: 2,
+        answerText: null,
+        confidence: "sure",
+        hintUsed: false,
+        dontKnow: false,
+      },
+      { headers },
+    );
+    expect(solved.status).toBe(200);
+
+    const body = (await todayBody(await requestToday({ headers }))) as TodayBody & {
+      set: { started?: boolean; items: { answered?: unknown }[] } | null;
+    };
+
+    expect(body.set?.id).toBe(set.id);
+    expect(body.set?.started).toBe(true);
+    const [firstView, secondView] = body.set?.items ?? [];
+    expect(firstView?.answered).toMatchObject({
+      submitted: { problemId: first.problemId, recallItemId: first.id, chosenIndex: 2, confidence: "sure" },
+      result: { outcome: "graded", isCorrect: true, answer: ANSWERS.mcq, explanation: "mcq 해설" },
+    });
+    expect(secondView?.answered).toBeUndefined();
+    const unsolved = JSON.stringify(secondView);
+    for (const hidden of ["answerIndex", "explanation", "해설"]) {
+      expect(unsolved).not.toContain(hidden);
+    }
   });
 
   it("TC-161 아직 띄우지 않은 세트가 여러 개면 가장 최근 학습일의 세트 하나만 돌려줘요", async () => {
