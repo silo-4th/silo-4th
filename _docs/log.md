@@ -80,3 +80,4 @@
 | 2026-11-07 | `wiki/quiz-formats.md`와 ADR `0010-quiz-free-grading.md`에 마이그레이션 `0006` 결과를 적었다 | 4-87 PR 1 배포 뒤 지울 컬럼의 데이터를 `is_correct`, `confidence`, `stem`으로 옮기고 컬럼을 지웠다 | 운영 적용은 `main` 배포 때 확인 필요 |
 | 2026-11-08 | ADR `0011-default-quiz-problems.md`를 만들고 `wiki/dev-rules.md`에 반영했다 | 4-90에서 기본 문제의 원본을 TS 모듈로 두고, 바꿀 때마다 내용 해시를 ID로 쓰는 새 마이그레이션으로 교체하기로 했다. 퀴즈 생성 통합 테스트는 마이그레이션이 넣은 기본 문제를 쓴다 | 기본 문제 정답 검수는 4-14에서 확인 필요 |
 | 2026-11-09 | ADR `0012-single-concept-classification.md`를 만들고 ADR `0008`, `wiki/dev-rules.md`, `wiki/question-concepts-summary.md`에 반영했다 | 4-95에서 질문 하나에 개념 하나만 저장하고, 분류 프롬프트에 개념별 한 줄 정리를 붙이기로 했다. TC-61을 폐기하고 TC-180으로 대신했다 | 평가 저장소의 `prompts/baseline.json` 갱신과 4-97 재측정 확인 필요 |
+| 2026-11-09 | 4-104에서 꺼내 먹기 세트를 새벽에 미리 만들지 않고 다음 날 첫 진입에 만들기로 바뀐 결정을 퀴즈 스키마 문서에 반영했다 | `output/2026-11-05-quiz-schema.md`의 미리 계산, 새벽 계산 표현을 다음 날 첫 진입에 만들기로 고치고, 기본 문제가 없는 절은 문항에서 빼는 처리를 적었다 | 없다 |

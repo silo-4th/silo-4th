@@ -40,8 +40,9 @@ export async function loadRecallRecords(learnerId: string): Promise<RecallRecord
   ];
 }
 
-export async function planRecall(learnerId: string): Promise<RecallPlan | undefined> {
-  const records = await loadRecallRecords(learnerId);
+// 오늘 학습일은 아직 끝나지 않았으므로 그 전 학습일 기록만 쓴다.
+export async function planRecall(learnerId: string, today: string): Promise<RecallPlan | undefined> {
+  const records = (await loadRecallRecords(learnerId)).filter((record) => record.studyDay < today);
   const sourceStudyDay = recallRange(records.map((record) => record.studyDay)).at(-1);
   const items = assignFormats(pickRecallTargets(records));
   if (!sourceStudyDay || items.length === 0) return undefined;
