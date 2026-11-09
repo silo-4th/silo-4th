@@ -282,7 +282,7 @@ export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId:
             ref={input}
             name="question"
             aria-label="질문"
-            placeholder="읽다가 궁금한 게 생기면 편하게 물어보세요"
+            placeholder="궁금한 걸 편하게 물어보세요. 예: 이건 언제 써요?"
             onKeyDown={sendOnEnter}
           />
           <div className="composer-bar">
