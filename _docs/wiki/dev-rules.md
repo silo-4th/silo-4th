@@ -51,7 +51,7 @@
 | [0003](adr/0003-neon-postgres-drizzle.md) | 기록 저장은 Neon Postgres에 하고, Drizzle ORM으로 접근한다 | 확정 |
 | [0004](adr/0004-social-login.md) | 소셜 로그인으로 학습자를 구분하고, 공급자는 Google, 인증 도구는 Better Auth를 쓴다 | 확정 |
 | [0005](adr/0005-sentry-error-monitoring.md) | 오류 모니터링은 Sentry 무료 요금제로 하고, 알림은 Apps Script로 Slack에 보낸다 | 확정 |
-| [0006](adr/0006-test-strategy.md) | 테스트는 노션 DB에서 확정한 케이스만 옮긴다. 단위는 Vitest, E2E는 Playwright로 하고, 통합 테스트는 DB를 변경하는 서버 코드에만 둔다 | 확정 |
+| [0006](adr/0006-test-strategy.md) | 테스트는 노션 DB에서 확정한 케이스만 옮긴다. 단위는 Vitest, E2E는 Playwright로 하고, 통합 테스트는 DB를 변경하거나 학습자별로 조회를 제한하는 서버 코드에만 둔다 | 확정 |
 | [0007](adr/0007-ai-model.md) | 질문 답변 AI 모델은 Claude Sonnet 5.5를 effort low로 쓴다 | 확정 |
 | [0008](adr/0008-question-concept-summary.md) | 질문 개념 분류와 요약은 Haiku 5.5로 따로 부르고, 실패해도 답을 막지 않는다 | 확정 |
 | [0009](adr/0009-migrate-on-deploy.md) | DB 마이그레이션은 Vercel 배포 빌드에서 자동으로 적용한다 | 확정 |
