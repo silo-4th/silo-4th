@@ -93,7 +93,7 @@
   .input:focus { outline: none; border-color: var(--color-green); }
 }
 
-/* 단원 본문 MD의 기본 모양. 4-56 디자인 스펙이 오면 맞춘다. */
+/* 마크다운의 기본 모양. 단원 본문, 에이전트 답 말풍선, 퀴즈 카드가 함께 쓴다. */
 .unit-body {
   line-height: 1.7;
 
@@ -106,4 +106,33 @@
   & th, & td { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); padding: 0.25rem 0.5rem; }
   & code { font-family: var(--font-mono); font-size: 0.9em; }
   & pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.25rem; background: color-mix(in srgb, currentColor 6%, transparent); }
+}
+
+/* 학습 화면 단원 본문 리더. 시안 Workspace의 .reader를 따르고 .unit-body 위에 덮는다. */
+.reader {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: --spacing(10) --spacing(10) --spacing(30);
+
+  & h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 --spacing(1.5); }
+  & h2 { font-size: 20px; letter-spacing: -0.02em; margin: --spacing(8) 0 --spacing(3); }
+  /* 절 소제목이다. 구간 탭이 본문 위에 붙어 있으므로 그 높이만큼 띄워 멈춘다. */
+  & h3 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin: --spacing(12) 0 --spacing(3); scroll-margin-top: 64px; }
+  & h4 { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; margin: --spacing(6) 0 --spacing(2); }
+  & p { font-size: 15.5px; line-height: 1.8; color: var(--color-ink-2); margin: 0 0 --spacing(3.5); }
+  & ul, & ol { margin: 0 0 --spacing(3.5); padding-left: --spacing(5); }
+  & ol { padding-left: --spacing(5.5); }
+  & li { font-size: 15px; line-height: 1.8; color: var(--color-ink-2); }
+  & ol li::marker { font-weight: 700; color: var(--color-gray); }
+  & :not(pre) > code { padding: 1px 5px; border-radius: 4px; background: var(--color-line-2); color: var(--color-ink); }
+  & pre { margin: 0 0 --spacing(4); padding: --spacing(4) --spacing(4.5); border-radius: var(--radius-md); background: #1e1f21; color: #e7e9eb; font-size: 13.5px; line-height: 1.7; }
+  & pre code { font-size: inherit; }
+  & table { width: 100%; margin: 0 0 --spacing(4.5); border: 1px solid var(--color-line); border-radius: var(--radius-md); border-collapse: separate; border-spacing: 0; overflow: hidden; font-size: 13.5px; }
+  & th, & td { border: 0; text-align: left; vertical-align: top; }
+  & th { padding: --spacing(2.5) --spacing(3.5); border-bottom: 1px solid var(--color-line); background: var(--color-bg); font-weight: 600; color: var(--color-gray); }
+  & td { padding: 11px --spacing(3.5); border-bottom: 1px solid var(--color-line-2); color: var(--color-ink-2); }
+  & tbody tr:last-child td { border-bottom: 0; }
+  & ::selection { background: #c4f1dc; color: var(--color-ink); }
+
+  @media (max-width: 860px) { padding-left: --spacing(5); padding-right: --spacing(5); }
 }

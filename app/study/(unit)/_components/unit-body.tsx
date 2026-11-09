@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type DwellClock,
   dwellSeconds,
@@ -13,13 +13,14 @@ import { sectionKey } from "./scroll-to-section";
 
 const SECTION_VIEWS_PATH = "/api/section-views";
 
-type Section = { key: string; conceptId: string | null };
+type Section = { key: string; title: string; conceptId: string | null };
 // 지금 읽는 절 하나다. 학습일은 본 절 응답으로 받으므로, 응답이 오기 전에 떠나도 기다렸다가 머문 시간을 보낸다.
 type Visit = { index: number; conceptId: string | null; studyDay: Promise<string | null>; clock: DwellClock };
 
 // 본문 스크롤 영역이다. 절 소제목이 맨 위에 닿으면 본 절로 남기고, 그 절을 떠날 때 머문 시간을 보낸다.
 export function UnitBody({ sections, children }: { sections: Section[]; children: ReactNode }) {
   const bodyRef = useRef<HTMLElement>(null);
+  const [reading, setReading] = useState<number>();
   // 서버가 화면을 다시 그리면 같은 절도 새 배열로 온다. 절이 그대로면 읽던 절을 끊지 않고, 해시로 옮긴 절을 다시 고르지 않는다.
   const sectionsKey = JSON.stringify(sections);
 
@@ -63,6 +64,7 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
       const atBottom = body.scrollTop > 0 && body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
       const index = jumpTarget ?? readingSection(offsets, atBottom);
       jumpTarget = undefined;
+      setReading(index);
       if (index === visit?.index) return;
       leave();
       if (index !== undefined) enter(index);
@@ -111,8 +113,25 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
   }, [sectionsKey]);
 
   return (
-    <article ref={bodyRef} className="unit-body min-w-0 flex-1 overflow-y-auto p-8">
-      {children}
+    <article ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto">
+      {sections.length > 0 && (
+        <nav aria-label="목차" className="sticky top-0 z-[2] border-b border-line-2 bg-white/92 backdrop-blur-[6px]">
+          <ul className="mx-auto flex max-w-[760px] gap-5.5 overflow-x-auto px-10 [scrollbar-width:none] max-[860px]:px-5">
+            {sections.map(({ key, title }, index) => (
+              <li key={key} className="flex-none">
+                <a
+                  href={`#${key}`}
+                  aria-current={index === reading ? "location" : undefined}
+                  className="block border-b-2 border-transparent py-3 text-[13px] font-semibold whitespace-nowrap text-gray aria-[current=location]:border-green aria-[current=location]:text-ink"
+                >
+                  {title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+      <div className="unit-body reader">{children}</div>
     </article>
   );
 }
