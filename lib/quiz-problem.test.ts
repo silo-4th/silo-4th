@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseQuizProblem } from "./quiz-problem";
+import { parseQuizProblem, type QuizProblemContent, shuffleChoices } from "./quiz-problem";
 
 const common = { stem: "WHERE와 HAVING의 차이는?", hint: "그룹을 만든 뒤를 떠올려 보세요", explanation: "HAVING은 그룹 조건이다" };
 const mcq = {
@@ -54,5 +54,48 @@ describe("퀴즈 문제 모양 검사", () => {
       failing.push([`modelAnswer ${JSON.stringify(value)}`, { ...free, answer: { ...free.answer, modelAnswer: value } }]);
     }
     for (const [name, problem] of failing) expect(parseQuizProblem(problem), name).toBeUndefined();
+  });
+});
+
+function fourChoiceProblem(answerIndex: number): QuizProblemContent {
+  return {
+    ...common,
+    format: "mcq",
+    answer: { choices: ["가", "나", "다", "라"].map((text) => ({ text })), answerIndex },
+  };
+}
+
+function choiceAnswer(problem: QuizProblemContent) {
+  if (problem.format !== "mcq") throw new Error("객관식 문제가 아니다.");
+  return problem.answer;
+}
+
+describe("객관식 보기 섞기", () => {
+  it("TC-239 객관식 보기를 섞어도 정답 번호는 원래 정답 보기를 가리키고, 보기 내용과 문제, 힌트, 해설은 그대로예요", () => {
+    const original = fourChoiceProblem(1);
+
+    const shuffled = shuffleChoices(original);
+
+    const { choices, answerIndex } = choiceAnswer(shuffled);
+    expect(choices.map(({ text }) => text).sort()).toEqual(["가", "나", "다", "라"]);
+    expect(choices[answerIndex]?.text).toBe("나");
+    expect(shuffled).toMatchObject({ format: "mcq", stem: original.stem, hint: original.hint, explanation: original.explanation });
+  });
+
+  it("TC-240 같은 객관식 문제를 여러 번 섞으면 정답이 모든 번호에 나오고 한 번호에 몰리지 않아요", () => {
+    const original = fourChoiceProblem(0);
+    const times = 400;
+    const counts = [0, 0, 0, 0];
+
+    for (let index = 0; index < times; index += 1) {
+      const { answerIndex } = choiceAnswer(shuffleChoices(original));
+      counts[answerIndex] = (counts[answerIndex] ?? 0) + 1;
+    }
+
+    expect(counts).toHaveLength(4);
+    for (const count of counts) {
+      expect(count).toBeGreaterThan(0);
+      expect(count).toBeLessThanOrEqual(times / 2);
+    }
   });
 });

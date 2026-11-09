@@ -53,3 +53,19 @@ export function parseQuizProblem(input: unknown): QuizProblemContent | undefined
       return undefined;
   }
 }
+
+// AI는 정답을 앞쪽 보기에 몰아 두므로, 저장하기 전에 보기 순서를 섞고 정답 번호를 따라 옮긴다.
+export function shuffleChoices(problem: QuizProblemContent): QuizProblemContent {
+  if (problem.format !== "mcq") return problem;
+  const { choices, answerIndex } = problem.answer;
+  const shuffled = choices
+    .map((choice, index) => ({ choice, index, key: Math.random() }))
+    .sort((a, b) => a.key - b.key);
+  return {
+    ...problem,
+    answer: {
+      choices: shuffled.map(({ choice }) => choice),
+      answerIndex: shuffled.findIndex(({ index }) => index === answerIndex),
+    },
+  };
+}

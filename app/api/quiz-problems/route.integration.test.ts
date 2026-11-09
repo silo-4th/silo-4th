@@ -763,22 +763,11 @@ describe("퀴즈 문제 만들기", () => {
 
     await expectOnlyVisibleFields(made);
     const output = generatedProblem(made.format);
-    const {
-      choices,
-      ...restOfAnswer
-    }: { choices?: { text: string }[] } & Record<string, unknown> =
-      output.answer;
-    if (made.format === "mcq")
-      expect(made.choices).toEqual(choices?.map(({ text }) => text));
     const row = await problemRow(made.id);
     expect(made.stem).toBe(row.stem);
     expect(made.stem).toContain(CODE_BLOCK);
     expect(row.explanation).toBe(output.explanation);
-    expect(row.answer).toMatchObject(
-      choices
-        ? { ...restOfAnswer, choices: choices.map(({ text }) => ({ text })) }
-        : restOfAnswer,
-    );
+    if (made.format !== "mcq") expect(row.answer).toMatchObject(output.answer);
 
     const fallback = await login();
     const inserted = await newProblem("s2-05-1");
@@ -793,6 +782,34 @@ describe("퀴즈 문제 만들기", () => {
     if (given.id === inserted.id) {
       expect(given.choices).toEqual(["1", "2", "3", "4"]);
     }
+  });
+
+  it("TC-241 AI가 만든 객관식 문제를 저장할 때 섞은 보기와 그 순서의 정답 번호를 함께 저장하고, 학습자에게도 저장한 순서로 보기를 보내요", async () => {
+    const { headers, learnerId } = await login();
+    await viewed(learnerId, "s2-05-1");
+    const aiChoices = ["1", "2", "3", "4"];
+    ai.create.mockImplementation(async (params) => {
+      const format = requestedFormat(params.messages[0]?.content ?? "");
+      if (format !== "mcq") return jsonReply(generatedProblem(format));
+      return jsonReply({
+        ...generatedProblem("mcq"),
+        answer: { choices: aiChoices.map((text) => ({ text })), answerIndex: 0 },
+      });
+    });
+
+    let made: ProblemBody | undefined;
+    for (let tries = 0; tries < 20 && made?.format !== "mcq"; tries += 1) {
+      made = await problemIn(await generate({ unitId: UNIT_ID }, { headers }));
+    }
+    if (made?.format !== "mcq") throw new Error("객관식 문제가 나오지 않았다.");
+
+    const row = await problemRow(made.id);
+    const stored = row.answer;
+    if (!("answerIndex" in stored)) throw new Error("저장된 답이 객관식이 아니다.");
+    const storedChoices = stored.choices.map(({ text }) => text);
+    expect([...storedChoices].sort()).toEqual(aiChoices);
+    expect(storedChoices[stored.answerIndex]).toBe("1");
+    expect(made.choices).toEqual(storedChoices);
   });
 
   it("TC-127 AI 생성이 실패하거나 제한 시간 안에 끝나지 않으면 502를 돌려주고 아무것도 저장하지 않아요", async () => {
