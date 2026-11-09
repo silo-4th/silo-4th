@@ -350,3 +350,37 @@ test("TC-198 문제 ID로 요청하면 정답과 해설을 뺀 내 문제와 기
     await deleteLearner(otherLearnerId);
   }
 });
+
+test("TC-213 다시 낸 기본 문제는 문제를 내준 시각 뒤의 풀이만 푼 것으로 봐요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const [shared] = await db
+    .select({ id: quizProblem.id })
+    .from(quizProblem)
+    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+    .where(and(isNull(quizProblem.learnerId), isNull(quizProblem.retiredAt), eq(concept.unitId, first.id)))
+    .limit(1);
+  if (!shared) throw new Error("테스트 DB의 첫 단원에 기본 문제가 있어야 한다.");
+
+  const answeredAt = new Date();
+  await db.insert(quizAttempt).values({
+    id: randomUUID(),
+    learnerId,
+    problemId: shared.id,
+    studyDay: daysFromNow(0),
+    chosenIndex: 0,
+    confidence: "sure",
+    isCorrect: false,
+    answeredAt,
+    appVersion: "e2e",
+  });
+
+  async function solvedWhenShownAt(shownAt: Date) {
+    const response = await page.request.get(`/api/quiz-problems/${shared?.id}?${new URLSearchParams({ shownAt: shownAt.toISOString() })}`);
+    expect(response.status()).toBe(200);
+    return ((await response.json()) as { solved: boolean }).solved;
+  }
+
+  expect(await solvedWhenShownAt(new Date(answeredAt.getTime() - 60_000))).toBe(true);
+  expect(await solvedWhenShownAt(new Date(answeredAt.getTime() + 60_000))).toBe(false);
+});
