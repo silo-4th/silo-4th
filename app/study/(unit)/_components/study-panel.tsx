@@ -26,7 +26,7 @@ import {
   setGuide,
   setItems,
   setTitle,
-  settleProblem,
+  settleQuizSet,
   startQuizSet,
 } from "@/lib/quiz-tab";
 import { QuestionPanel } from "./question-panel";
@@ -64,10 +64,10 @@ function useQuizSet(learnerId: string) {
   }
 
   function settle(requested: QuizTab, problem: ProblemResult, servedAt?: string) {
-    const tab = settleProblem(current.current.tab, requested, problem);
-    if (tab === current.current.tab) return;
-    if (tab.stage === "problem") shownAt.current = servedAt;
-    commit({ ...current.current, tab });
+    const next = settleQuizSet(current.current, requested, problem);
+    if (next === current.current) return;
+    if (next.tab.stage === "problem") shownAt.current = servedAt;
+    commit(next);
   }
 
   function send(event: QuizSetEvent) {
@@ -105,10 +105,11 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   }
 
   // 누른 버튼이 숨는 에이전트 탭에 있으므로 포커스를 퀴즈 탭으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
+  // 새로고침 뒤 퀴즈 탭을 열기 전이어도 기억해 둔 묶음의 카운트와 칩을 잇도록 함께 보낸다.
   function solveRelated(questionId: string) {
     setShown("quiz");
     tabs.current.get("quiz")?.focus();
-    sendQuiz({ type: "related", questionId });
+    sendQuiz({ type: "related", questionId, saved: readSavedProblem(learnerId) });
   }
 
   function moveFocus(event: KeyboardEvent, index: number) {

@@ -37,7 +37,7 @@ export type QuizTab =
 
 export type QuizTabEvent =
   | { type: "enter"; unitId: string; saved?: SavedProblem }
-  | { type: "related"; questionId: string }
+  | { type: "related"; questionId: string; saved?: SavedProblem }
   | { type: "loaded"; problem: ProblemView }
   | { type: "failed" }
   | { type: "solved" }
@@ -59,6 +59,11 @@ export function startQuizTab(): QuizTab {
   return { stage: "idle" };
 }
 
+// 퀴즈 탭을 열기 전에 관련 문제를 부르면 기억해 둔 묶음 위에서 받는다. 마지막 칸까지 찼으면 끝난 묶음이라 새로 시작한다.
+function unfinished(saved: SavedProblem | undefined): SavedProblem | undefined {
+  return saved && !(saved.number >= SET_SIZE && saved.results?.[saved.number - 1]) ? saved : undefined;
+}
+
 function askOf(tab: ProblemAsk): ProblemAsk {
   return "questionId" in tab ? { questionId: tab.questionId } : { unitId: tab.unitId };
 }
@@ -69,7 +74,7 @@ function askOf(tab: ProblemAsk): ProblemAsk {
 export function advanceQuizTab(tab: QuizTab, event: QuizTabEvent): QuizTab {
   if (event.type === "related") {
     if (tab.stage === "loading" && "questionId" in tab && tab.questionId === event.questionId) return tab;
-    const number = tab.stage === "idle" || tab.stage === "result" ? 1 : tab.number;
+    const number = tab.stage === "result" ? 1 : tab.stage === "idle" ? (unfinished(event.saved)?.number ?? 1) : tab.number;
     return { stage: "loading", number, questionId: event.questionId };
   }
   switch (tab.stage) {
@@ -118,7 +123,8 @@ function withSlot(results: SetResults, number: number, slot: SlotResult | null):
 function resultsAfter({ tab, results }: QuizSet, next: QuizTab, event: QuizSetEvent): SetResults {
   if (tab.stage === "idle" || tab.stage === "result") {
     if (next === tab) return results;
-    return event.type === "enter" ? (event.saved?.results ?? []) : [];
+    if (event.type === "enter") return event.saved?.results ?? [];
+    return event.type === "related" && tab.stage === "idle" ? (unfinished(event.saved)?.results ?? []) : [];
   }
   if (event.type === "loaded" && next !== tab && next.stage === "problem") return withSlot(results, next.number, null);
   const solved = event.type === "graded" || event.type === "next" ? event.solved : undefined;
@@ -151,10 +157,18 @@ export function setGuide(results: SetResults): string {
 // 요청 하나의 결과다. solved는 기억해 둔 문제를 이미 풀었다는 뜻이고, undefined는 받지 못했다는 뜻이다.
 export type ProblemResult = ProblemView | "solved" | undefined;
 
+function settledEvent(problem: ProblemResult): QuizTabEvent {
+  if (problem === "solved") return { type: "solved" };
+  return problem ? { type: "loaded", problem } : { type: "failed" };
+}
+
 export function settleProblem(current: QuizTab, requested: QuizTab, problem: ProblemResult): QuizTab {
-  if (current !== requested) return current;
-  if (problem === "solved") return advanceQuizTab(current, { type: "solved" });
-  return advanceQuizTab(current, problem ? { type: "loaded", problem } : { type: "failed" });
+  return current === requested ? advanceQuizTab(current, settledEvent(problem)) : current;
+}
+
+// 화면은 이 함수로만 응답을 반영한다. 탭만 바꾸면 문제가 뜰 때 칸을 비우는 규칙을 건너뛴다.
+export function settleQuizSet(current: QuizSet, requested: QuizTab, problem: ProblemResult): QuizSet {
+  return current.tab === requested ? advanceQuizSet(current, settledEvent(problem)) : current;
 }
 
 // servedAt은 응답의 Date 헤더로 읽은 서버 시각이다. 초 단위로 내림되어 있어 그 응답 뒤의 풀이는 모두 이 시각 이후다.
