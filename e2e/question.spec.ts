@@ -209,6 +209,7 @@ function panel(page: Page) {
     input: page.getByRole("textbox", { name: "질문" }),
     send: page.getByRole("button", { name: "보내기", exact: true }),
     newSession: page.getByRole("button", { name: "새 대화", exact: true }),
+    history: page.getByRole("button", { name: "대화 기록", exact: true }),
     conversation: page.getByRole("list", { name: "대화" }).getByRole("listitem"),
     sessions: page.getByRole("list", { name: "세션 목록" }).getByRole("listitem"),
   };
@@ -225,22 +226,27 @@ test("TC-77 새 대화를 만들어 질문한 뒤 이전 대화로 돌아가면 
     await saveAnswered(learnerId, body, answer);
     await fulfillStream(route, delta(answer) + DONE);
   });
-  const { input, send, newSession, conversation, sessions } = panel(page);
+  const { input, send, newSession, history, conversation, sessions } = panel(page);
 
   await page.goto("/study");
   await input.fill("질문 A");
   await send.click();
   await expect(conversation).toHaveText(["질문 A", "질문 A의 답"]);
+  await history.click();
   await expect(sessions).toHaveCount(1);
+  await page.keyboard.press("Escape");
 
   await newSession.click();
 
   await expect(conversation).toHaveCount(0);
+  await history.click();
   await expect(sessions).toHaveCount(1);
+  await page.keyboard.press("Escape");
 
   await input.fill("질문 B");
   await send.click();
   await expect(conversation).toHaveText(["질문 B", "질문 B의 답"]);
+  await history.click();
   await expect(sessions).toHaveCount(2);
 
   await sessions.getByRole("button", { name: "질문 A" }).click();
@@ -250,6 +256,7 @@ test("TC-77 새 대화를 만들어 질문한 뒤 이전 대화로 돌아가면 
   await page.reload();
 
   await expect(conversation).toHaveText(["질문 A", "질문 A의 답"]);
+  await history.click();
   await expect(sessions).toHaveCount(2);
 
   const tab = await context.newPage();
@@ -285,7 +292,7 @@ test("TC-78 다른 학습자의 대화는 목록에 나오지 않고, 직접 요
 
 test("TC-79 답을 받는 중에 다른 대화로 옮겨도 답은 질문한 대화에만 붙어요", async ({ page }) => {
   const push = await stubAnswerStreams(page);
-  const { input, send, newSession, conversation, sessions } = panel(page);
+  const { input, send, newSession, history, conversation, sessions } = panel(page);
 
   await page.goto("/study");
   await input.fill("이전 대화 질문");
@@ -299,12 +306,14 @@ test("TC-79 답을 받는 중에 다른 대화로 옮겨도 답은 질문한 대
   await push(1, delta("새 답 앞부분"));
   await expect(page.getByText("새 답 앞부분")).toBeVisible();
 
+  await history.click();
   await sessions.getByRole("button", { name: "이전 대화 질문" }).click();
 
   await expect(conversation).toHaveText(["이전 대화 질문", "이전 답"]);
   await push(1, delta(" 뒷부분") + DONE);
   await expect(conversation).toHaveText(["이전 대화 질문", "이전 답"]);
 
+  await history.click();
   await sessions.getByRole("button", { name: "새 대화 질문" }).click();
 
   await expect(conversation).toHaveText(["새 대화 질문", "새 답 앞부분 뒷부분"]);
@@ -314,18 +323,21 @@ test("TC-80 학습셋을 바꿔도 지금 대화가 그대로 남아요", async 
   const [, second] = await firstUnits(2);
   if (!second) throw new Error("테스트 DB에 단원이 두 개 이상 있어야 한다.");
   await page.route("**/api/questions", (route) => fulfillStream(route, delta("남아 있을 답") + DONE));
-  const { input, send, conversation, sessions } = panel(page);
+  const { input, send, history, conversation, sessions } = panel(page);
 
   await page.goto("/study");
   await input.fill("남아 있을 질문");
   await send.click();
   await expect(conversation).toHaveText(["남아 있을 질문", "남아 있을 답"]);
+  await history.click();
   await expect(sessions).toHaveCount(1);
+  await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "강의 목록" }).click();
   await page.getByRole("link", { name: second.title, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: second.title, exact: true })).toBeVisible();
 
   await expect(conversation).toHaveText(["남아 있을 질문", "남아 있을 답"]);
+  await history.click();
   await expect(sessions).toHaveCount(1);
 });
