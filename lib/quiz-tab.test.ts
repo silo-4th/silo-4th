@@ -79,9 +79,9 @@ describe("이어 풀기", () => {
     expect(run(resuming, { type: "failed" })).toEqual({ stage: "loading", number: 3, unitId: unitA });
   });
 
-  it("TC-217 진행 게이지는 지금 문제 번호와 채점 여부로 채운 칸 수를 정하고 다섯 칸을 넘지 않아요", () => {
+  it("TC-217 진행 게이지는 지금 문제 번호와 채점 여부로 채운 칸 수를 정하고 세 칸을 넘지 않아요", () => {
     expect(gaugeFilled(1, false)).toBe(0);
-    expect(gaugeFilled(3, true)).toBe(3);
-    expect(gaugeFilled(7, false)).toBe(5);
+    expect(gaugeFilled(2, true)).toBe(2);
+    expect(gaugeFilled(5, false)).toBe(3);
   });
 });
