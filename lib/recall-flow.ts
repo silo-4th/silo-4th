@@ -108,6 +108,10 @@ export async function openTodayRecall(): Promise<RecallSetView | null> {
 // 네트워크가 잠깐 끊겨 시작 기록이 빠지면 뒤따르는 완료 기록도 서버가 거절하므로, 실패한 기록은 잠시 뒤 다시 보낸다.
 // 4xx는 다시 보내도 결과가 같아 다시 보내지 않는다.
 const EVENT_RETRY_DELAYS_MS = [1_000, 3_000];
+// 기록은 차례로 보내므로 응답 없는 요청 하나가 뒤 기록을 모두 막는다. 시도마다 끊고 다시 보낸다.
+// 기록 API는 서버에서 10초 안에 끝나거나 멈춘다. 그보다 길게 기다려야, 끊은 시작 기록이 완료 기록보다 늦게 저장되지 않는다.
+// 서버는 같은 기록을 다시 받으면 처음 시각을 유지하므로, 끊긴 요청이 실제로 저장됐어도 다시 보내도 된다.
+const EVENT_TIMEOUT_MS = 15_000;
 
 async function sendEvent(setId: string, event: RecallEvent) {
   for (const delay of [0, ...EVENT_RETRY_DELAYS_MS]) {
@@ -116,6 +120,7 @@ async function sendEvent(setId: string, event: RecallEvent) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event }),
       keepalive: true,
+      signal: AbortSignal.timeout(EVENT_TIMEOUT_MS),
     });
     if (response && response.status < 500) return;
   }
