@@ -93,6 +93,7 @@ test("TC-98 학습 화면을 떠나면 읽던 절의 머문 시간이 남아요"
   await expect(heading(page, first)).toBeAttached();
   await scrollToTop(page, first);
   await page.waitForTimeout(2_000);
+  await page.getByRole("button", { name: "강의 목록" }).click();
   await page.getByRole("navigation", { name: "단원" }).getByRole("link", { name: other.title, exact: true }).click();
 
   await expect(heading(page, otherFirst)).toBeAttached();
