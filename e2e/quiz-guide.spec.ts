@@ -40,7 +40,7 @@ test("TC-193 퀴즈 탭을 처음 연 학습자에게 문제와 함께 온보딩
   await expect(guide).toHaveCount(0);
   await expect(panel.getByText(problem.stem)).toBeVisible();
 
-  await page.getByRole("tab", { name: "에이전트", exact: true }).click();
+  await page.getByRole("tab", { name: "AI 에이전트", exact: true }).click();
   await expect(panel).toBeHidden();
   await page.getByRole("tab", { name: "퀴즈", exact: true }).click();
   await expect(panel.getByText(problem.stem)).toBeVisible();
