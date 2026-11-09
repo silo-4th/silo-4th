@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# 조직 설정을 그대로 쓰고 아래 값만 덮어쓴다.
+inheritance: true
+reviews:
+  pre_merge_checks:
+    # 이 저장소는 코드가 보여 주지 못하는 이유만 주석으로 남긴다. 함수마다 설명 주석을 요구하는 점검과 맞지 않는다.
+    docstrings:
+      mode: "off"

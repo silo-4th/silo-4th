@@ -22,6 +22,41 @@
       "when": 1793676699488,
       "tag": "0002_study_records",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793802959267,
+      "tag": "0003_question_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793867998188,
+      "tag": "0004_concepts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793875350741,
+      "tag": "0005_quiz_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794056503816,
+      "tag": "0006_quiz_grading_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794071508991,
+      "tag": "0007_default_quiz_problems",
+      "breakpoints": true
     }
   ]
 }

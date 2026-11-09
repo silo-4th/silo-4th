@@ -11,7 +11,7 @@
 
 - 환경 변수는 `lib/env.ts`의 `env`로만 읽는다.
 - 타입을 `any`로 덮지 않는다.
-- AI 모델 ID를 코드에 쓰지 않고 `env.ANTHROPIC_MODEL`로만 읽는다. 질문 답변은 Claude Sonnet 5.5를 effort `low`로 쓰며, 근거는 `_docs/wiki/adr/0007-ai-model.md`에 있다.
+- AI 모델 ID를 코드에 쓰지 않고 `env.ANTHROPIC_MODEL`과 `env.ANTHROPIC_UTILITY_MODEL`로만 읽는다. 질문 답변은 `env.ANTHROPIC_MODEL`의 Claude Sonnet 5.5를 effort `low`로 쓰며, 근거는 `_docs/wiki/adr/0007-ai-model.md`에 있다. 질문 개념 분류와 요약은 `env.ANTHROPIC_UTILITY_MODEL`의 Claude Haiku 5.5를 쓰며, 근거는 `_docs/wiki/adr/0008-question-concept-summary.md`에 있다. 서술형 퀴즈 채점도 `env.ANTHROPIC_UTILITY_MODEL`을 쓰며, 근거는 `_docs/wiki/adr/0010-quiz-free-grading.md`에 있다. 퀴즈 생성은 `env.ANTHROPIC_MODEL`을 쓰며, 근거는 같은 ADR 0010에 있다.
 
 ## 테스트
 

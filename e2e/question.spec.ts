@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { expect, type Page, type Route } from "@playwright/test";
-import { firstUnits, test } from "./fixtures";
+import { createLearner, deleteLearner, firstUnits, saveAnswered, test } from "./fixtures";
 
-type AskBody = { questionId: string; unitId: string; content: string };
+type AskBody = { questionId: string; sessionId: string; unitId: string; content: string };
 type StreamStub = { answerStreams: ((chunk: string) => void)[] };
 
 const delta = (text: string) => `event: delta\ndata: ${JSON.stringify({ text })}\n\n`;
@@ -64,6 +65,7 @@ test("TC-51 실패한 질문을 다시 보내면 같은 질문으로 이어져 �
 
   await expect(page.getByText(FAILED)).toBeVisible();
 
+  await page.getByRole("button", { name: "강의 목록" }).click();
   await page.getByRole("link", { name: second.title, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: second.title, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "다시 시도" }).click();
@@ -200,4 +202,142 @@ test("TC-58 질문을 보냈는데 로그인이 풀렸으면 첫 화면으로 �
 
   await expect(page).toHaveURL((url) => url.pathname === "/");
   await expect(page.getByText(FAILED)).toHaveCount(0);
+});
+
+function panel(page: Page) {
+  return {
+    input: page.getByRole("textbox", { name: "질문" }),
+    send: page.getByRole("button", { name: "보내기", exact: true }),
+    newSession: page.getByRole("button", { name: "새 대화", exact: true }),
+    history: page.getByRole("button", { name: "대화 기록", exact: true }),
+    conversation: page.getByRole("list", { name: "대화" }).getByRole("listitem"),
+    sessions: page.getByRole("list", { name: "세션 목록" }).getByRole("listitem"),
+  };
+}
+
+test("TC-77 새 대화를 만들어 질문한 뒤 이전 대화로 돌아가면 그 대화의 질문과 답이 보이고, 새로고침해도 보고 있던 대화가 열려요", async ({
+  page,
+  context,
+  learnerId,
+}) => {
+  await page.route("**/api/questions", async (route) => {
+    const body = route.request().postDataJSON() as AskBody;
+    const answer = `${body.content}의 답`;
+    await saveAnswered(learnerId, body, answer);
+    await fulfillStream(route, delta(answer) + DONE);
+  });
+  const { input, send, newSession, history, conversation, sessions } = panel(page);
+
+  await page.goto("/study");
+  await input.fill("질문 A");
+  await send.click();
+  await expect(conversation).toHaveText(["질문 A", "질문 A의 답"]);
+  await history.click();
+  await expect(sessions).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
+  await newSession.click();
+
+  await expect(conversation).toHaveCount(0);
+  await history.click();
+  await expect(sessions).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
+  await input.fill("질문 B");
+  await send.click();
+  await expect(conversation).toHaveText(["질문 B", "질문 B의 답"]);
+  await history.click();
+  await expect(sessions).toHaveCount(2);
+
+  await sessions.getByRole("button", { name: "질문 A" }).click();
+
+  await expect(conversation).toHaveText(["질문 A", "질문 A의 답"]);
+
+  await page.reload();
+
+  await expect(conversation).toHaveText(["질문 A", "질문 A의 답"]);
+  await history.click();
+  await expect(sessions).toHaveCount(2);
+
+  const tab = await context.newPage();
+  await tab.goto("/study");
+
+  await expect(panel(tab).conversation).toHaveText(["질문 B", "질문 B의 답"]);
+});
+
+test("TC-78 다른 학습자의 대화는 목록에 나오지 않고, 직접 요청해도 내용을 받지 못해요", async ({ page }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 없다.");
+  const other = await createLearner();
+  try {
+    const sessionId = randomUUID();
+    await saveAnswered(other, { questionId: randomUUID(), sessionId, unitId: first.id, content: "A의 질문" }, "A의 답");
+    const listed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/question-sessions");
+
+    await page.goto("/study");
+    await listed;
+
+    await expect(page.getByText("A의 질문")).toHaveCount(0);
+
+    const response = await page.request.get(`/api/question-sessions/${sessionId}`);
+
+    expect(response.ok()).toBe(false);
+    const body = await response.text();
+    expect(body).not.toContain("A의 질문");
+    expect(body).not.toContain("A의 답");
+  } finally {
+    await deleteLearner(other);
+  }
+});
+
+test("TC-79 답을 받는 중에 다른 대화로 옮겨도 답은 질문한 대화에만 붙어요", async ({ page }) => {
+  const push = await stubAnswerStreams(page);
+  const { input, send, newSession, history, conversation, sessions } = panel(page);
+
+  await page.goto("/study");
+  await input.fill("이전 대화 질문");
+  await send.click();
+  await push(0, delta("이전 답") + DONE);
+  await expect(conversation).toHaveText(["이전 대화 질문", "이전 답"]);
+
+  await newSession.click();
+  await input.fill("새 대화 질문");
+  await send.click();
+  await push(1, delta("새 답 앞부분"));
+  await expect(page.getByText("새 답 앞부분")).toBeVisible();
+
+  await history.click();
+  await sessions.getByRole("button", { name: "이전 대화 질문" }).click();
+
+  await expect(conversation).toHaveText(["이전 대화 질문", "이전 답"]);
+  await push(1, delta(" 뒷부분") + DONE);
+  await expect(conversation).toHaveText(["이전 대화 질문", "이전 답"]);
+
+  await history.click();
+  await sessions.getByRole("button", { name: "새 대화 질문" }).click();
+
+  await expect(conversation).toHaveText(["새 대화 질문", "새 답 앞부분 뒷부분"]);
+});
+
+test("TC-80 학습셋을 바꿔도 지금 대화가 그대로 남아요", async ({ page }) => {
+  const [, second] = await firstUnits(2);
+  if (!second) throw new Error("테스트 DB에 단원이 두 개 이상 있어야 한다.");
+  await page.route("**/api/questions", (route) => fulfillStream(route, delta("남아 있을 답") + DONE));
+  const { input, send, history, conversation, sessions } = panel(page);
+
+  await page.goto("/study");
+  await input.fill("남아 있을 질문");
+  await send.click();
+  await expect(conversation).toHaveText(["남아 있을 질문", "남아 있을 답"]);
+  await history.click();
+  await expect(sessions).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "강의 목록" }).click();
+  await page.getByRole("link", { name: second.title, exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: second.title, exact: true })).toBeVisible();
+
+  await expect(conversation).toHaveText(["남아 있을 질문", "남아 있을 답"]);
+  await history.click();
+  await expect(sessions).toHaveCount(1);
 });

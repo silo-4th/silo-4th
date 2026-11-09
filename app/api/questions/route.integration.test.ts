@@ -3,7 +3,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteCreatedLearners, learnerWithEmail, loginWithGoogle, newProfile } from "@/lib/auth/google-login.testing";
 import { getDb } from "@/lib/db";
-import { learner, message, question, unit } from "@/lib/db/schema";
+import { learner, message, question, questionSession, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { studyDay } from "@/lib/study-day";
 import { POST } from "./route";
@@ -23,6 +23,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 const APP_VERSION = "test-version";
 const createdQuestionIds: string[] = [];
+const createdSessionIds: string[] = [];
 
 type Chunks = { chunks: string[]; error?: Error; holdBeforeFirst?: Promise<void>; holdAfterFirst?: Promise<void> };
 
@@ -69,6 +70,18 @@ function newQuestionId() {
   return id;
 }
 
+function newSessionId() {
+  const id = randomUUID();
+  createdSessionIds.push(id);
+  return id;
+}
+
+async function newSession(learnerId: string) {
+  const id = newSessionId();
+  await getDb().insert(questionSession).values({ id, learnerId });
+  return id;
+}
+
 async function firstUnit() {
   const [found] = await getDb().select().from(unit).orderBy(asc(unit.id)).limit(1);
   if (!found) throw new Error("테스트 DB에 단원이 없다.");
@@ -84,8 +97,9 @@ async function loginConsented() {
   return { headers, learnerId: found.id };
 }
 
+// 세션 ID를 주지 않으면 요청마다 새 세션으로 보내, 앞 테스트의 대화가 AI에게 넘어가지 않게 한다.
 function ask(
-  body: { questionId: string; unitId: string; content: string },
+  body: { questionId: string; unitId: string; content: string; sessionId?: string },
   { headers = new Headers(), origin = new URL(env.AUTH_URL).origin }: { headers?: Headers; origin?: string } = {},
 ) {
   const requestHeaders = new Headers(headers);
@@ -95,7 +109,7 @@ function ask(
     new Request(new URL("/api/questions", env.AUTH_URL), {
       method: "POST",
       headers: requestHeaders,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ sessionId: newSessionId(), ...body }),
     }),
   );
 }
@@ -149,6 +163,8 @@ afterEach(async () => {
     await getDb().delete(message).where(inArray(message.questionId, ids));
     await getDb().delete(question).where(inArray(question.id, ids));
   }
+  const sessionIds = createdSessionIds.splice(0);
+  if (sessionIds.length > 0) await getDb().delete(questionSession).where(inArray(questionSession.id, sessionIds));
   await deleteCreatedLearners();
 });
 
@@ -199,7 +215,15 @@ describe("질문 보내기", () => {
     const askedAt = new Date();
     await getDb()
       .insert(question)
-      .values({ id: questionId, learnerId, unitId, askedAt, studyDay: studyDay(askedAt), appVersion: APP_VERSION });
+      .values({
+        id: questionId,
+        learnerId,
+        sessionId: await newSession(learnerId),
+        unitId,
+        askedAt,
+        studyDay: studyDay(askedAt),
+        appVersion: APP_VERSION,
+      });
     await getDb().insert(message).values({ questionId, seq: 1, role: "user", content: "답하는 중인 질문" });
     const questionsBefore = await questionRows(questionId);
     const messagesBefore = await messageRows(questionId);
@@ -434,6 +458,7 @@ describe("질문 보내기", () => {
     await getDb().insert(question).values({
       id: questionId,
       learnerId,
+      sessionId: await newSession(learnerId),
       unitId,
       askedAt,
       studyDay: studyDay(askedAt),
@@ -486,5 +511,137 @@ describe("질문 보내기", () => {
       expect.objectContaining({ role: "assistant", content: "동시에 받은 답" }),
     ]);
     expect(ai.stream).toHaveBeenCalledTimes(1);
+  });
+});
+
+function sessionRows(id: string) {
+  return getDb().select().from(questionSession).where(eq(questionSession.id, id));
+}
+
+function questionsInSession(sessionId: string) {
+  return getDb().select().from(question).where(eq(question.sessionId, sessionId)).orderBy(asc(question.askedAt));
+}
+
+function sentConversation() {
+  const [params] = ai.stream.mock.lastCall ?? [];
+  return (params as { messages: unknown[] }).messages;
+}
+
+describe("대화 세션", () => {
+  it("TC-75 새 대화에서 첫 질문을 보내면 세션이 생기고, 같은 대화의 다음 질문도 그 세션에 저장돼요", async () => {
+    const { headers, learnerId } = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const sessionId = newSessionId();
+    const first = newQuestionId();
+    const second = newQuestionId();
+
+    await events(await ask({ questionId: first, unitId, content: "첫 질문", sessionId }, { headers }));
+    await events(await ask({ questionId: second, unitId, content: "다음 질문", sessionId }, { headers }));
+
+    expect(await sessionRows(sessionId)).toEqual([expect.objectContaining({ id: sessionId, learnerId })]);
+    expect((await questionsInSession(sessionId)).map(({ id }) => id)).toEqual([first, second]);
+  });
+
+  it("TC-76 다른 학습자의 세션 ID로 질문을 보내면 거부하고 아무것도 저장하지 않아요", async () => {
+    const a = await loginConsented();
+    const b = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const sessionId = newSessionId();
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "A의 질문", sessionId }, { headers: a.headers }));
+    const sessionBefore = await sessionRows(sessionId);
+    const questionsBefore = await questionsInSession(sessionId);
+    ai.stream.mockClear();
+    const questionId = newQuestionId();
+
+    const response = await ask({ questionId, unitId, content: "B의 질문", sessionId }, { headers: b.headers });
+
+    expect(response.status).toBe(403);
+    expect(await questionRows(questionId)).toEqual([]);
+    expect(await messageRows(questionId)).toEqual([]);
+    expect(await sessionRows(sessionId)).toEqual(sessionBefore);
+    expect(await questionsInSession(sessionId)).toEqual(questionsBefore);
+    expect(ai.stream).not.toHaveBeenCalled();
+  });
+
+  it("TC-81 실패한 질문을 다시 보내면 다른 세션 ID가 와도 처음 세션에 남아요", async () => {
+    const { headers } = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const first = newSessionId();
+    const other = newSessionId();
+    const questionId = newQuestionId();
+    aiFails();
+    await events(await ask({ questionId, unitId, content: "실패할 질문", sessionId: first }, { headers }));
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "다른 대화 질문", sessionId: other }, { headers }));
+    aiAnswers("다시 받은 답");
+
+    const received = await events(await ask({ questionId, unitId, content: "실패할 질문", sessionId: other }, { headers }));
+
+    expect(received.at(-1)?.event).toBe("done");
+    expect(answerText(received)).toBe("다시 받은 답");
+    expect((await questionRows(questionId))[0]?.sessionId).toBe(first);
+    expect((await questionsInSession(other)).map(({ id }) => id)).not.toContain(questionId);
+  });
+
+  it("TC-83 세션 ID가 없거나 형식이 맞지 않으면 질문을 받지 않고 아무것도 저장하지 않아요", async () => {
+    const { headers, learnerId } = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const missing = newQuestionId();
+    const malformed = newQuestionId();
+
+    const withoutSession = await ask({ questionId: missing, unitId, content: "세션 없는 질문", sessionId: undefined }, { headers });
+    const badSession = await ask({ questionId: malformed, unitId, content: "형식이 틀린 세션", sessionId: "not-a-uuid" }, { headers });
+
+    expect(withoutSession.status).toBe(400);
+    expect(badSession.status).toBe(400);
+    for (const id of [missing, malformed]) {
+      expect(await questionRows(id)).toEqual([]);
+      expect(await messageRows(id)).toEqual([]);
+    }
+    expect(await getDb().select().from(questionSession).where(eq(questionSession.learnerId, learnerId))).toEqual([]);
+    expect(ai.stream).not.toHaveBeenCalled();
+  });
+
+  it("TC-84 같은 세션에서 답을 받은 이전 질문과 답만 순서대로 AI에게 넘기고, 다른 세션 대화는 넘기지 않아요", async () => {
+    const { headers } = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const current = newSessionId();
+    const other = newSessionId();
+    aiAnswers("A1");
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "Q1", sessionId: current }, { headers }));
+    aiFails();
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "Q2", sessionId: current }, { headers }));
+    aiAnswers("A3");
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "Q3", sessionId: other }, { headers }));
+    aiAnswers("A4");
+
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "Q4", sessionId: current }, { headers }));
+
+    expect(sentConversation()).toEqual([
+      { role: "user", content: "Q1" },
+      { role: "assistant", content: "A1" },
+      { role: "user", content: "Q4" },
+    ]);
+  });
+
+  it("TC-85 실패한 질문을 다시 보내면 그 질문보다 먼저 물은 대화만 AI에게 넘겨요", async () => {
+    const { headers } = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const sessionId = newSessionId();
+    const failed = newQuestionId();
+    aiAnswers("A1");
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "Q1", sessionId }, { headers }));
+    aiFails();
+    await events(await ask({ questionId: failed, unitId, content: "Q2", sessionId }, { headers }));
+    aiAnswers("A3");
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "Q3", sessionId }, { headers }));
+    aiAnswers("A2");
+
+    await events(await ask({ questionId: failed, unitId, content: "Q2", sessionId }, { headers }));
+
+    expect(sentConversation()).toEqual([
+      { role: "user", content: "Q1" },
+      { role: "assistant", content: "A1" },
+      { role: "user", content: "Q2" },
+    ]);
   });
 });

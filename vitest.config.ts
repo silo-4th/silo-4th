@@ -41,6 +41,8 @@ export default defineConfig({
           env: integrationEnv,
           // 원격 Neon에 여러 번 왕복하므로 로그인 두 번이면 기본 5초를 넘는다.
           testTimeout: 30_000,
+          // 파일들이 같은 test DB의 같은 단원에 기본 문제를 넣고 지우므로, 동시에 돌면 서로의 결과를 바꾼다.
+          fileParallelism: false,
           exclude: ["node_modules/**"],
         },
       },

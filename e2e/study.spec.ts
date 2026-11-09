@@ -9,6 +9,7 @@ test("TC-23 단원을 고르면 그 단원 본문이 보여요", async ({ page }
   await page.goto("/study");
   await expect(bodyTitle(first.title)).toBeVisible();
 
+  await page.getByRole("button", { name: "강의 목록" }).click();
   await page.getByRole("link", { name: second.title, exact: true }).click();
 
   await expect(bodyTitle(second.title)).toBeVisible();

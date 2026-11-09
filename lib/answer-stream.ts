@@ -60,7 +60,7 @@ function deltaText(data: string) {
 }
 
 export async function askQuestion(
-  input: { questionId: string; unitId: string; content: string },
+  input: { questionId: string; sessionId: string; unitId: string; content: string },
   onText?: (answer: string) => void,
 ) {
   try {

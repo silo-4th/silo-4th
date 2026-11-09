@@ -8,7 +8,7 @@ const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
 // 모바일 판별, 화면 접근 확인, 출처 쿠키 순서로 본다.
 export function proxy(request: NextRequest) {
-  // 모바일 화면은 만들지 않는다. 주소는 그대로 두고 안내 화면을 보여 줘야 `?from=`까지 복사할 수 있다.
+  // 모바일 화면은 만들지 않고 어느 주소로 들어와도 안내 화면으로 막는다.
   if (isMobileRequest(request.headers)) {
     return NextResponse.rewrite(new URL(MOBILE_NOTICE_PATH, request.url));
   }

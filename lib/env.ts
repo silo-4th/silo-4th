@@ -14,6 +14,10 @@ export const env = {
   get ANTHROPIC_MODEL() {
     return required("ANTHROPIC_MODEL");
   },
+  // 질문 개념 분류와 요약, 서술형 퀴즈 채점에 쓰는 모델이다. 근거는 _docs/wiki/adr/0008-question-concept-summary.md와 0010-quiz-free-grading.md다.
+  get ANTHROPIC_UTILITY_MODEL() {
+    return required("ANTHROPIC_UTILITY_MODEL");
+  },
   get DATABASE_URL() {
     return required("DATABASE_URL");
   },
@@ -32,5 +36,9 @@ export const env = {
   // 배포한 커밋으로 질문을 나눠 본다. Vercel이 배포마다 넣어 주므로 따로 설정하지 않고, 로컬에서는 local로 남긴다.
   get APP_VERSION() {
     return process.env.VERCEL_GIT_COMMIT_SHA || "local";
+  },
+  // Vercel이 배포 환경마다 production, preview로 넣는다. 로컬에서는 비어 있다.
+  get VERCEL_ENV() {
+    return process.env.VERCEL_ENV;
   },
 };
