@@ -9,6 +9,7 @@ import {
   type RecallFlowEvent,
   advanceRecall,
   entryOf,
+  isLastProblem,
   openTodayRecall,
   progressOf,
   recordRecallEvent,
@@ -37,7 +38,10 @@ export function RecallGate({ children }: { children: ReactNode }) {
     let active = true;
     opened.current ??= openTodayRecall();
     void opened.current.then((set) => {
-      if (active) setGate(set ? { stage: "recall", set } : { stage: "study" });
+      if (!active) return;
+      // 모든 문항을 푼 뒤 완료 기록만 빠진 세트는 결과부터 열리므로, 여기서 완료를 보낸다.
+      if (set && startRecall(set).stage === "result") recordRecallEvent(set.id, "complete");
+      setGate(set ? { stage: "recall", set } : { stage: "study" });
     });
     return () => {
       active = false;
@@ -93,7 +97,8 @@ function RecallScreen({ set, onClose, onLeave }: { set: RecallSetView } & Exits)
   function send(event: RecallFlowEvent) {
     const next = advanceRecall(flow, event);
     if (next === flow) return;
-    if (next.stage === "problem" && flow.stage === "entry") recordRecallEvent(set.id, "start");
+    // 시작 기록이 빠진 채 모든 문항을 푼 세트는 입구에서 결과로 바로 가므로, 입구를 떠날 때마다 시작을 보낸다.
+    if (flow.stage === "entry") recordRecallEvent(set.id, "start");
     if (next.stage === "result") recordRecallEvent(set.id, "complete");
     setFlow(next);
   }
@@ -144,7 +149,7 @@ function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => v
         시작하기
       </button>
       <button type="button" onClick={onLater} className="mt-3 self-center text-sm font-medium text-gray hover:text-ink-2">
-        내일 꺼내 먹을래요
+        오늘은 건너뛸게요
       </button>
     </>
   );
@@ -159,7 +164,7 @@ function Problem({
 }) {
   const item = flow.set.items[flow.index];
   if (!item) return null;
-  const last = flow.index === flow.set.items.length - 1;
+  const last = isLastProblem(flow);
   return (
     <QuizCard
       key={item.id}

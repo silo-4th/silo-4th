@@ -1,10 +1,11 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
-import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
-import { concept, quizProblem, type RECALL_REASONS, recallItem, recallSet, sectionView, unit } from "@/lib/db/schema";
+import { concept, quizAttempt, quizProblem, type RECALL_REASONS, recallItem, recallSet, sectionView, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import { type AttemptInput, type AttemptResult, toResult } from "@/lib/quiz-attempts";
 import { type ProblemView, problemViewColumns, toProblemView } from "@/lib/quiz-problems";
 import { studyDay } from "@/lib/study-day";
 import { conceptSection, type SectionAddress, type StudyTarget } from "@/lib/unit-sections";
@@ -20,7 +21,10 @@ export type RecallSetView = {
     reason: (typeof RECALL_REASONS)[number];
     problem: ProblemView;
     section?: SectionAddress;
+    // 이미 푼 문항에만 있다. 이어 풀 때 결과에 처음 풀이를 그대로 보여 준다.
+    answered?: { submitted: AttemptInput; result: AttemptResult };
   }[];
+  started?: true;
   // 결과 화면에서 오늘 공부를 이어 갈 곳이다. 가장 최근에 처음 본 절이고, 그 소제목이 본문에 없으면 그 단원, 본 절이 없으면 첫 단원이다.
   studyFrom?: StudyTarget;
 };
@@ -50,9 +54,9 @@ export function recallToday(advanceDay: boolean, now = new Date()) {
   return studyDay(advance ? new Date(now.getTime() + DAY_MS) : now);
 }
 
-// 기준일이 오늘보다 앞선 세트 가운데 가장 최근 것 하나만 띄운다. 그 세트를 이미 띄웠으면 더 오래된 세트로 넘어가지 않는다.
-// 띄운 시각은 비어 있을 때만 채워서, 동시에 온 요청 중 하나만 세트를 받는다.
-// 문항을 읽다 실패하면 띄운 시각도 되돌려, 다시 요청했을 때 그 세트를 받을 수 있게 한다.
+// 기준일이 오늘보다 앞선 세트 가운데 가장 최근 것 하나만 띄운다. 그 세트를 마쳤거나 미뤘으면 더 오래된 세트로 넘어가지 않는다.
+// 마치거나 미루기 전에는 같은 세트를 다시 돌려줘, 응답을 받지 못했거나 새로고침한 학습자가 세트를 잃지 않게 한다.
+// 띄운 시각은 처음 띄운 때만 채운다. 문항을 읽다 실패하면 처음 채운 띄운 시각도 되돌린다.
 export async function showTodaySet(learnerId: string, today: string): Promise<RecallSetView | null> {
   return getDb().transaction(async (tx) => {
     const latest = tx
@@ -63,9 +67,9 @@ export async function showTodaySet(learnerId: string, today: string): Promise<Re
       .limit(1);
     const [shown] = await tx
       .update(recallSet)
-      .set({ shownAt: new Date() })
-      .where(and(inArray(recallSet.id, latest), isNull(recallSet.shownAt)))
-      .returning({ id: recallSet.id });
+      .set({ shownAt: sql`coalesce(${recallSet.shownAt}, now())` })
+      .where(and(inArray(recallSet.id, latest), isNull(recallSet.completedAt), isNull(recallSet.postponedAt)))
+      .returning({ id: recallSet.id, startedAt: recallSet.startedAt });
     if (!shown) return null;
 
     const items = await tx
@@ -76,9 +80,19 @@ export async function showTodaySet(learnerId: string, today: string): Promise<Re
         problem: problemViewColumns,
         unitId: concept.unitId,
         content: unit.content,
+        attempt: {
+          id: quizAttempt.id,
+          chosenIndex: quizAttempt.chosenIndex,
+          answerText: quizAttempt.answerText,
+          confidence: quizAttempt.confidence,
+          hintUsed: quizAttempt.hintUsed,
+          isCorrect: quizAttempt.isCorrect,
+        },
+        explanation: quizProblem.explanation,
       })
       .from(recallItem)
       .innerJoin(quizProblem, eq(quizProblem.id, recallItem.problemId))
+      .leftJoin(quizAttempt, eq(quizAttempt.recallItemId, recallItem.id))
       .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
       .innerJoin(unit, eq(unit.id, concept.unitId))
       .where(eq(recallItem.setId, shown.id))
@@ -98,10 +112,31 @@ export async function showTodaySet(learnerId: string, today: string): Promise<Re
       (firstUnit && { unitId: firstUnit.id });
     return {
       id: shown.id,
-      items: items.map(({ unitId, content, ...item }) => {
+      items: items.map(({ unitId, content, attempt, explanation, ...item }) => {
         const section = conceptSection(unitId, content, item.problem.conceptId);
-        return { ...item, problem: toProblemView(item.problem), ...(section && { section }) };
+        return {
+          ...item,
+          problem: toProblemView(item.problem),
+          ...(section && { section }),
+          ...(attempt && {
+            answered: {
+              submitted: {
+                attemptId: attempt.id,
+                problemId: item.problem.id,
+                recallItemId: item.id,
+                chosenIndex: attempt.chosenIndex,
+                answerText: attempt.answerText,
+                confidence: attempt.confidence,
+                hintUsed: attempt.hintUsed,
+                // 잘 모르겠어요는 따로 저장하지 않는다. 고른 답도 적은 글도 없는 풀이는 잘 모르겠어요로만 생긴다.
+                dontKnow: attempt.chosenIndex === null && attempt.answerText === null,
+              },
+              result: toResult({ isCorrect: attempt.isCorrect, answer: item.problem.answer, explanation }),
+            },
+          }),
+        };
       }),
+      ...(shown.startedAt && { started: true as const }),
       ...(studyFrom && { studyFrom }),
     };
   });

@@ -146,7 +146,7 @@ async function grade(answer: Answer, problem: Problem): Promise<boolean | null> 
 type SavedAttempt = Pick<typeof quizAttempt.$inferSelect, "learnerId" | "isCorrect"> &
   Pick<typeof quizProblem.$inferSelect, "answer" | "explanation">;
 
-function toResult({ isCorrect, answer, explanation }: SavedAttempt): AttemptResult {
+export function toResult({ isCorrect, answer, explanation }: Omit<SavedAttempt, "learnerId">): AttemptResult {
   return isCorrect === null
     ? { outcome: "ungraded", answer, explanation }
     : { outcome: "graded", isCorrect, answer, explanation };
@@ -240,7 +240,7 @@ export async function submitAttempt(learnerId: string, input: AttemptInput): Pro
     .onConflictDoNothing()
     .returning({ id: quizAttempt.id });
   if (inserted) {
-    return { kind: "saved", result: toResult({ learnerId, isCorrect, answer: problem.answer, explanation: problem.explanation }) };
+    return { kind: "saved", result: toResult({ isCorrect, answer: problem.answer, explanation: problem.explanation }) };
   }
   // 같은 풀이 ID가 동시에 왔으면 먼저 저장한 요청의 결과를 따른다.
   // 그 풀이 ID가 없으면 다른 풀이 ID로 같은 꺼내 먹기 문항을 동시에 푼 것이다.

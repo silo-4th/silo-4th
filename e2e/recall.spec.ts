@@ -122,7 +122,7 @@ test("TC-202 어제 학습한 학습자가 오늘 처음 학습 화면에 들어
   await expect(screen.getByText("넘어감", { exact: true })).toHaveCount(2);
   await expect(screen.getByText("물어봄", { exact: true })).toHaveCount(1);
   await expect(screen.getByRole("button", { name: "시작하기" })).toBeVisible();
-  await expect(screen.getByRole("button", { name: "내일 꺼내 먹을래요" })).toBeVisible();
+  await expect(screen.getByRole("button", { name: "오늘은 건너뛸게요" })).toBeVisible();
   expect((await setTimes(seeded.setId))?.shownAt).not.toBeNull();
 });
 
@@ -189,15 +189,58 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   expect(times?.postponedAt).toBeNull();
 });
 
-test("TC-205 내일 꺼내 먹을래요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
+test("TC-205 오늘은 건너뛸게요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
   const { setId, unit } = await seedSet(learnerId, [{ format: "mcq", reason: "read_no_question" }]);
 
   await page.goto(`/study/${unit.id}`);
   const screen = recallScreen(page);
-  await screen.getByRole("button", { name: "내일 꺼내 먹을래요" }).click();
+  await screen.getByRole("button", { name: "오늘은 건너뛸게요" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: unit.title, exact: true })).toBeVisible();
   await expect(screen).toHaveCount(0);
   await expect.poll(async () => (await setTimes(setId))?.postponedAt).not.toBeNull();
   expect((await setTimes(setId))?.startedAt).toBeNull();
+});
+
+test("TC-236 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남은 문항부터 이어 풀고, 결과에 앞서 푼 문항도 보이며 완료 시각이 남아요", async ({ page, learnerId }) => {
+  const { setId, unit, items } = await seedSet(learnerId, [
+    { format: "mcq", reason: "read_no_question" },
+    { format: "mcq", reason: "read_no_question" },
+  ]);
+  const [first, second] = items;
+  if (!first || !second) throw new Error("문항이 2개여야 한다.");
+
+  await page.goto(`/study/${unit.id}`);
+  const screen = recallScreen(page);
+  await screen.getByRole("button", { name: "시작하기" }).click();
+
+  const card = screen.getByRole("region", { name: "퀴즈" });
+  await expect(screen.getByText("1 / 2")).toBeVisible();
+  await card.getByText("HAVING", { exact: true }).click();
+  await card.getByRole("button", { name: "확실해요" }).click();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+  await card.getByRole("button", { name: "다음 문제" }).click();
+  await expect(screen.getByText("2 / 2")).toBeVisible();
+  await expect.poll(async () => (await setTimes(setId))?.startedAt).not.toBeNull();
+
+  await page.reload();
+
+  await expect(screen.getByText("2 / 2")).toBeVisible();
+  await expect(screen.getByRole("button", { name: "시작하기" })).toHaveCount(0);
+  await card.getByText("HAVING", { exact: true }).click();
+  await card.getByRole("button", { name: "확실해요" }).click();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+  await card.getByRole("button", { name: "결과 보기" }).click();
+
+  await expect(screen.getByRole("heading", { name: "2개 모두 맞혔어요" })).toBeVisible();
+  await expect(screen.getByText(`1. ${first.conceptTitle}`)).toBeVisible();
+  await expect(screen.getByText(`2. ${second.conceptTitle}`)).toBeVisible();
+
+  const attempts = await db
+    .select({ recallItemId: quizAttempt.recallItemId })
+    .from(quizAttempt)
+    .where(eq(quizAttempt.learnerId, learnerId));
+  expect(attempts.map((row) => row.recallItemId).sort()).toEqual([first.id, second.id].sort());
+  await expect.poll(async () => (await setTimes(setId))?.completedAt).not.toBeNull();
+  expect((await setTimes(setId))?.startedAt).not.toBeNull();
 });
