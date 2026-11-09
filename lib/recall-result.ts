@@ -1,10 +1,12 @@
-import type { AttemptInput } from "@/lib/quiz-attempts";
+import type { AttemptInput, AttemptResult } from "@/lib/quiz-attempts";
 import { resultView } from "@/lib/quiz-card";
 import type { RecallAnswer } from "@/lib/recall-flow";
 import type { RecallSetView } from "@/lib/recall-sets";
 import type { SectionAddress, StudyTarget } from "@/lib/unit-sections";
 
-export type ResultChip = "맞혔어요" | "맞았지만 헷갈렸어요" | "틀렸어요" | "채점하지 못했어요";
+export const RESULT_CHIPS = ["맞혔어요", "맞았지만 헷갈렸어요", "틀렸어요", "채점하지 못했어요"] as const;
+
+export type ResultChip = (typeof RESULT_CHIPS)[number];
 
 export type ResultCard = {
   itemId: string;
@@ -31,22 +33,27 @@ function submittedText(item: RecallItemView, submitted: AttemptInput) {
   return submitted.answerText ?? "";
 }
 
+// 꺼내 먹기와 퀴즈 탭이 함께 쓰는 칩 규칙이다. 모르겠어요는 채점을 받지 못해도 틀린 것으로 본다.
+export function chipOf(submitted: AttemptInput, result?: AttemptResult): ResultChip {
+  if (!result) return submitted.dontKnow ? "틀렸어요" : "채점하지 못했어요";
+  if (result.outcome === "ungraded") return "채점하지 못했어요";
+  if (!result.isCorrect || submitted.dontKnow) return "틀렸어요";
+  return submitted.confidence === "sure" ? "맞혔어요" : "맞았지만 헷갈렸어요";
+}
+
 function bodyOf(item: RecallItemView, answer: RecallAnswer): CardBody {
-  // 모르겠어요는 채점을 받지 못해도 건너뛴 것과 같다.
-  if (answer.kind === "skipped" || (!answer.result && answer.submitted.dontKnow))
-    return { ...NOTHING_SHOWN, chip: "틀렸어요", myAnswer: SKIPPED_ANSWER };
+  if (answer.kind === "skipped") return { ...NOTHING_SHOWN, chip: "틀렸어요", myAnswer: SKIPPED_ANSWER };
   const { submitted, result } = answer;
-  if (!result) return { ...NOTHING_SHOWN, chip: "채점하지 못했어요", myAnswer: submittedText(item, submitted) };
+  const chip = chipOf(submitted, result);
+  if (!result) return { ...NOTHING_SHOWN, chip, myAnswer: submitted.dontKnow ? SKIPPED_ANSWER : submittedText(item, submitted) };
+  if (chip === "맞혔어요" || chip === "맞았지만 헷갈렸어요") return { ...NOTHING_SHOWN, chip, explanation: result.explanation };
   const view = resultView(submitted, result);
-  const shown = {
+  return {
+    chip,
     myAnswer: submitted.dontKnow ? SKIPPED_ANSWER : view.myAnswer,
     correctAnswer: view.correctAnswers.join(", "),
     explanation: result.explanation,
   };
-  if (result.outcome === "ungraded") return { chip: "채점하지 못했어요", ...shown };
-  if (!result.isCorrect || submitted.dontKnow) return { chip: "틀렸어요", ...shown };
-  const chip = submitted.confidence === "sure" ? "맞혔어요" : "맞았지만 헷갈렸어요";
-  return { ...NOTHING_SHOWN, chip, explanation: result.explanation };
 }
 
 export function resultCards(set: RecallSetView, answers: RecallAnswer[]): ResultCard[] {
@@ -66,24 +73,30 @@ export function resultCards(set: RecallSetView, answers: RecallAnswer[]): Result
   });
 }
 
-function countOf(cards: ResultCard[], chip: ResultChip) {
+type Chipped = Pick<ResultCard, "chip">;
+
+function countOf(cards: readonly Chipped[], chip: ResultChip) {
   return cards.filter((card) => card.chip === chip).length;
 }
 
 // 채점하지 못한 문항은 맞힘도 틀림도 아니라서 문항 수 N에서 뺀다.
-export function resultTitle(cards: ResultCard[]): string {
+export function resultTitle(cards: readonly Chipped[], finished = "꺼내 먹기를 마쳤어요"): string {
   const total = cards.length - countOf(cards, "채점하지 못했어요");
   const wrong = countOf(cards, "틀렸어요");
   const unsure = countOf(cards, "맞았지만 헷갈렸어요");
-  if (total === 0) return "꺼내 먹기를 마쳤어요";
+  if (total === 0) return finished;
+  if (wrong === total) return `${total}개 모두 틀렸어요`;
   if (wrong > 0) return `${total}개 중 ${wrong}개를 틀렸어요`;
   if (unsure > 0) return `${total}개 다 맞혔지만 ${unsure}개는 헷갈렸어요`;
   return `${total}개 모두 맞혔어요`;
 }
 
-export function resultSubtitle(cards: ResultCard[]): string {
-  const review = countOf(cards, "틀렸어요") + countOf(cards, "맞았지만 헷갈렸어요");
-  return review > 0
+export function needsReview(cards: readonly Chipped[]): boolean {
+  return countOf(cards, "틀렸어요") + countOf(cards, "맞았지만 헷갈렸어요") > 0;
+}
+
+export function resultSubtitle(cards: readonly Chipped[]): string {
+  return needsReview(cards)
     ? "잘 기억한 건 넘어가고, 다른 건 다시 볼 곳을 알려줄게요."
     : "오늘은 새로운 내용으로 넘어가도 좋아요.";
 }
