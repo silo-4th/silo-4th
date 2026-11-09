@@ -9,6 +9,7 @@ import {
   isNotNull,
   isNull,
   ne,
+  type SQL,
 } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
@@ -25,9 +26,10 @@ import {
 } from "@/lib/db/schema";
 import {
   type GenerationContext,
+  type GenerationInput,
   generateQuizProblem,
 } from "@/lib/llm/quiz-generation";
-import { parseQuizProblem } from "@/lib/quiz-problem";
+import { type QuizProblemContent, parseQuizProblem } from "@/lib/quiz-problem";
 
 // 퀴즈 탭은 열어 둔 단원으로, 관련 문제 풀어보기는 그 질문으로 부른다.
 export type ProblemRequest =
@@ -167,7 +169,7 @@ async function recentSummaries(
   return rows.flatMap((row) => (row.summary ? [row.summary] : [])).reverse();
 }
 
-async function conversationOf(questionId: string): Promise<GenerationContext> {
+export async function conversationOf(questionId: string): Promise<GenerationContext> {
   const rows = await getDb()
     .select({ role: message.role, content: message.content })
     .from(message)
@@ -216,24 +218,19 @@ const storedColumns = {
 };
 
 // 기본 문제는 이 학습자가 아직 풀지 않은 것에서 내고, 다 풀었으면 다시 전체에서 낸다.
-async function defaultProblem(
+async function pickDefaultProblem(
   learnerId: string,
-  unitId: string,
-): Promise<ProblemView> {
+  scope: SQL | undefined,
+): Promise<StoredProblem | undefined> {
   const db = getDb();
   const problems = await db
     .select(storedColumns)
     .from(quizProblem)
     .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
     .where(
-      and(
-        isNull(quizProblem.learnerId),
-        isNull(quizProblem.retiredAt),
-        eq(concept.unitId, unitId),
-      ),
+      and(isNull(quizProblem.learnerId), isNull(quizProblem.retiredAt), scope),
     );
-  if (problems.length === 0)
-    throw new Error(`단원 ${unitId}에 기본 문제가 없다.`);
+  if (problems.length === 0) return undefined;
   const solved = await db
     .selectDistinct({ problemId: quizAttempt.problemId })
     .from(quizAttempt)
@@ -248,9 +245,38 @@ async function defaultProblem(
     );
   const solvedIds = new Set(solved.map((row) => row.problemId));
   const unsolved = problems.filter((problem) => !solvedIds.has(problem.id));
-  const picked = pickRandom(unsolved.length > 0 ? unsolved : problems);
-  if (!picked) throw new Error("기본 문제를 고르지 못했다.");
+  return pickRandom(unsolved.length > 0 ? unsolved : problems);
+}
+
+async function defaultProblem(
+  learnerId: string,
+  unitId: string,
+): Promise<ProblemView> {
+  const picked = await pickDefaultProblem(learnerId, eq(concept.unitId, unitId));
+  if (!picked) throw new Error(`단원 ${unitId}에 기본 문제가 없다.`);
   return toView(picked);
+}
+
+export async function conceptDefaultProblemId(
+  learnerId: string,
+  conceptId: string,
+) {
+  return (
+    await pickDefaultProblem(learnerId, eq(quizProblem.conceptId, conceptId))
+  )?.id;
+}
+
+// AI 출력은 모양 검사를 통과해야만 저장할 수 있는 문제가 된다.
+export async function generateProblemContent(
+  input: GenerationInput,
+): Promise<QuizProblemContent> {
+  const output = await generateQuizProblem(input);
+  const content = parseQuizProblem({ ...output, format: input.format });
+  if (!content)
+    throw new Error(
+      `AI가 만든 ${input.format} 문제가 모양 검사를 통과하지 못했다.`,
+    );
+  return content;
 }
 
 type Plan = {
@@ -323,17 +349,12 @@ async function generate(
   const format = pickRandom(QUIZ_FORMATS) ?? "mcq";
   let content;
   try {
-    const output = await generateQuizProblem({
+    content = await generateProblemContent({
       unitContent,
       target: { conceptId: target.id, title: target.title },
       format,
       context: plan.context,
     });
-    content = parseQuizProblem({ ...output, format });
-    if (!content)
-      throw new Error(
-        `AI가 만든 ${format} 문제가 모양 검사를 통과하지 못했다.`,
-      );
   } catch (error) {
     reportQuizProblemError(error);
     return { kind: "generation-failed" };
