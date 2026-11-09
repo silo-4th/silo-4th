@@ -1,9 +1,9 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
-import { CONFIDENCES, type QuizAnswer, quizAttempt, quizProblem, recallItem, recallSet } from "@/lib/db/schema";
+import { CONFIDENCES, concept, type QuizAnswer, quizAttempt, quizProblem, recallItem, recallSet, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { gradeFreeAnswer } from "@/lib/llm/grading";
 import {
@@ -15,6 +15,7 @@ import {
   gradeChoice,
   toGradable,
 } from "@/lib/quiz-grading";
+import type { PastAttempt } from "@/lib/past-problems";
 import { MAX_ANSWER_LENGTH } from "@/lib/quiz-flow";
 import { studyDay } from "@/lib/study-day";
 import { isUuid } from "@/lib/uuid";
@@ -250,4 +251,30 @@ export async function submitAttempt(learnerId: string, input: AttemptInput): Pro
     throw new Error("겹친 풀이 ID의 풀이를 읽지 못했다.");
   }
   return replay(saved, learnerId);
+}
+
+// 퀴즈 탭에서 푼 풀이만 돌려준다. 관련 문제 풀어보기도 퀴즈 탭에서 풀어서 함께 오고, 꺼내 먹기 풀이는 결과 화면이 따로 있어 뺀다.
+// 풀고 난 뒤 내려간 문제도 지난 기록이라 그대로 보여 준다.
+export async function listPastAttempts(learnerId: string): Promise<PastAttempt[]> {
+  const rows = await getDb()
+    .select({
+      attemptId: quizAttempt.id,
+      answeredAt: quizAttempt.answeredAt,
+      unitTitle: unit.title,
+      format: quizProblem.format,
+      stem: quizProblem.stem,
+      chosenIndex: quizAttempt.chosenIndex,
+      answerText: quizAttempt.answerText,
+      confidence: quizAttempt.confidence,
+      isCorrect: quizAttempt.isCorrect,
+      answer: quizProblem.answer,
+      explanation: quizProblem.explanation,
+    })
+    .from(quizAttempt)
+    .innerJoin(quizProblem, eq(quizProblem.id, quizAttempt.problemId))
+    .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+    .innerJoin(unit, eq(unit.id, concept.unitId))
+    .where(and(eq(quizAttempt.learnerId, learnerId), isNull(quizAttempt.recallItemId)))
+    .orderBy(desc(quizAttempt.answeredAt));
+  return rows.map((row) => ({ ...row, answeredAt: row.answeredAt.toISOString() }));
 }
