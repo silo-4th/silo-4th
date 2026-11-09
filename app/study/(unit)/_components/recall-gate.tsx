@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { QuizCard } from "@/app/_components/quiz-card";
 import {
@@ -10,16 +12,24 @@ import {
   openTodayRecall,
   progressOf,
   recordRecallEvent,
+  recordSectionOpened,
   startRecall,
 } from "@/lib/recall-flow";
+import { type ResultCard, type ResultChip, resultCards, resultSubtitle, resultTitle, studyHref } from "@/lib/recall-result";
 import type { RecallSetView } from "@/lib/recall-sets";
 
-type Gate = { stage: "checking" } | { stage: "recall"; set: RecallSetView } | { stage: "study" };
+// leavingFrom은 결과에서 다른 단원으로 떠날 때의 주소다. 주소가 바뀌면 학습 화면을 그린다.
+type Gate =
+  | { stage: "checking" }
+  | { stage: "recall"; set: RecallSetView; leavingFrom?: string }
+  | { stage: "study" };
 
 // 하루 첫 진입에 꺼내 먹기를 띄운다. 확인이 끝날 때까지 학습 화면을 그리지 않아, 꺼내 먹기 뒤에서 본 절 기록이 쌓이지 않게 한다.
 // 레이아웃에 두어 단원을 옮겨도 다시 확인하지 않는다.
 export function RecallGate({ children }: { children: ReactNode }) {
   const [gate, setGate] = useState<Gate>({ stage: "checking" });
+  const pathname = usePathname();
+  const router = useRouter();
   // 오늘 세트는 한 번만 받을 수 있다. 개발 모드에서 효과가 두 번 돌아도 요청은 한 번만 보낸다.
   const opened = useRef<Promise<RecallSetView | null>>(null);
 
@@ -34,6 +44,21 @@ export function RecallGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // 학습 화면은 주소가 갈 곳으로 바뀐 뒤에 그린다. 먼저 그리면 떠나는 단원의 절을 본 것으로 기록하고, 해시로 절을 찾는 화면이 옛 주소를 읽는다.
+  if (gate.stage === "recall" && gate.leavingFrom !== undefined && pathname !== gate.leavingFrom) setGate({ stage: "study" });
+
+  function leave(href: string) {
+    if (gate.stage !== "recall") return;
+    const target = new URL(href, location.href);
+    if (target.pathname === location.pathname) {
+      history.pushState(null, "", target.hash || target.pathname);
+      setGate({ stage: "study" });
+      return;
+    }
+    setGate({ ...gate, leavingFrom: pathname });
+    router.push(href);
+  }
+
   if (gate.stage === "study") return children;
   return (
     <main aria-label="꺼내 먹기" aria-busy={gate.stage === "checking"} className="fixed inset-0 z-50 overflow-y-auto bg-white text-ink">
@@ -42,7 +67,7 @@ export function RecallGate({ children }: { children: ReactNode }) {
           어제 공부한 내용을 챙기고 있어요
         </p>
       ) : (
-        <RecallScreen set={gate.set} onClose={() => setGate({ stage: "study" })} />
+        <RecallScreen set={gate.set} onClose={() => setGate({ stage: "study" })} onLeave={leave} />
       )}
     </main>
   );
@@ -60,7 +85,9 @@ function focusStep(element: HTMLElement | null) {
   element?.focus();
 }
 
-function RecallScreen({ set, onClose }: { set: RecallSetView; onClose: () => void }) {
+type Exits = { onClose: () => void; onLeave: (href: string) => void };
+
+function RecallScreen({ set, onClose, onLeave }: { set: RecallSetView } & Exits) {
   const [flow, setFlow] = useState<RecallFlow>(() => startRecall(set));
 
   function send(event: RecallFlowEvent) {
@@ -78,10 +105,12 @@ function RecallScreen({ set, onClose }: { set: RecallSetView; onClose: () => voi
 
   return (
     <>
-      <header className="sticky top-0 flex h-14 items-center justify-between border-b border-line bg-white px-6">
-        <span className="text-[15px] font-bold">꺼내 먹기</span>
-        <span className="text-sm font-semibold text-gray">{progressOf(flow)}</span>
-      </header>
+      {flow.stage !== "result" && (
+        <header className="sticky top-0 flex h-14 items-center justify-between border-b border-line bg-white px-6">
+          <span className="text-[15px] font-bold">꺼내 먹기</span>
+          <span className="text-sm font-semibold text-gray">{progressOf(flow)}</span>
+        </header>
+      )}
       <section
         key={flow.stage === "problem" ? `problem-${flow.index}` : flow.stage}
         ref={focusStep}
@@ -91,7 +120,7 @@ function RecallScreen({ set, onClose }: { set: RecallSetView; onClose: () => voi
       >
         {flow.stage === "entry" && <Entry set={set} onStart={() => send({ type: "start" })} onLater={postpone} />}
         {flow.stage === "problem" && <Problem flow={flow} send={send} />}
-        {flow.stage === "result" && <Finished onClose={onClose} />}
+        {flow.stage === "result" && <Result flow={flow} onClose={onClose} onLeave={onLeave} />}
       </section>
     </>
   );
@@ -143,14 +172,109 @@ function Problem({
   );
 }
 
-// 결과 화면은 4-34에서 만든다. 지금은 마쳤다는 것만 알리고 학습 화면으로 돌려보낸다.
-function Finished({ onClose }: { onClose: () => void }) {
+const CHIP_CLASS: Record<ResultChip, string> = {
+  맞혔어요: "chip-green",
+  "맞았지만 헷갈렸어요": "chip-amber",
+  틀렸어요: "chip-red",
+  "채점하지 못했어요": "",
+};
+
+// 링크로 두어 새 탭으로도 열 수 있게 하고, 이 화면에서 옮길 때만 주소가 바뀐 뒤 꺼내 먹기를 닫는다.
+function LeaveLink({
+  href,
+  onLeave,
+  onOpen,
+  className,
+  children,
+}: {
+  href: string;
+  onLeave: (href: string) => void;
+  onOpen?: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      onNavigate={(event) => {
+        event.preventDefault();
+        onOpen?.();
+        onLeave(href);
+      }}
+      className={className}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function Result({ flow, onClose, onLeave }: { flow: Extract<RecallFlow, { stage: "result" }> } & Exits) {
+  const cards = resultCards(flow.set, flow.answers);
+  const { studyFrom } = flow.set;
+  const start = "btn btn-dark btn-lg btn-block mt-8";
   return (
     <>
-      <h1 className="text-[22px] font-bold">꺼내 먹기를 마쳤어요</h1>
-      <button type="button" onClick={onClose} className="btn btn-dark btn-lg btn-block mt-8">
-        학습하러 가기
-      </button>
+      <p className="text-sm font-semibold text-green-600">🍪 플러키에게 쿠키를 전달했어요!</p>
+      <h1 className="mt-2 text-[22px] leading-snug font-bold">{resultTitle(cards)}</h1>
+      <p className="mt-2 text-sm text-gray">{resultSubtitle(cards)}</p>
+      <ol className="mt-6 flex flex-col gap-3">
+        {cards.map((card, index) => (
+          <ResultItem key={card.itemId} number={index + 1} card={card} onLeave={onLeave} />
+        ))}
+      </ol>
+      {studyFrom ? (
+        <LeaveLink href={studyHref(studyFrom)} onLeave={onLeave} className={start}>
+          오늘 공부 시작하기
+        </LeaveLink>
+      ) : (
+        <button type="button" onClick={onClose} className={start}>
+          오늘 공부 시작하기
+        </button>
+      )}
     </>
+  );
+}
+
+function ResultItem({ number, card, onLeave }: { number: number; card: ResultCard; onLeave: (href: string) => void }) {
+  const { section } = card;
+  return (
+    <li className="card flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-[15px] font-semibold">
+          {number}. {card.conceptTitle}
+        </span>
+        <span className={`chip ${CHIP_CLASS[card.chip]}`}>{card.chip}</span>
+      </div>
+      {card.myAnswer !== undefined && (
+        <dl className={card.stacked || card.correctAnswer === undefined ? "flex flex-col gap-2" : "grid grid-cols-2 gap-2"}>
+          <AnswerBox label="내 답" text={card.myAnswer} />
+          {card.correctAnswer !== undefined && <AnswerBox label="정답" text={card.correctAnswer} />}
+        </dl>
+      )}
+      {card.explanation !== undefined && (
+        <p className="text-sm leading-relaxed text-ink-2">
+          <span className="font-semibold text-ink">해설</span> {card.explanation}
+        </p>
+      )}
+      {card.studyLink && section && (
+        <LeaveLink
+          href={studyHref(section)}
+          onLeave={onLeave}
+          onOpen={() => recordSectionOpened(card.itemId)}
+          className="btn btn-sm self-start"
+        >
+          공부하러 가기
+        </LeaveLink>
+      )}
+    </li>
+  );
+}
+
+function AnswerBox({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-bg px-3 py-2.5">
+      <dt className="text-xs font-semibold text-gray">{label}</dt>
+      <dd className="mt-1 text-sm break-words">{text}</dd>
+    </div>
   );
 }
