@@ -49,7 +49,7 @@ test("TC-176 에이전트 탭에 갔다가 퀴즈 탭으로 돌아오면 풀던 
   await tab(page, "퀴즈").click();
   const panel = quizPanel(page);
   await expect(panel.getByText(problem.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
   await panel.getByText("HAVING", { exact: true }).click();
 
   await tab(page, "AI 에이전트").click();
@@ -57,7 +57,7 @@ test("TC-176 에이전트 탭에 갔다가 퀴즈 탭으로 돌아오면 풀던 
   await tab(page, "퀴즈").click();
 
   await expect(panel.getByText(problem.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
   expect(requests).toBe(1);
 });
 
@@ -112,7 +112,7 @@ test("TC-178 본 절도 대화도 없는 학습자가 퀴즈 탭을 열면 그 �
   const card = panel.getByRole("region", { name: "퀴즈" });
   await expect(card).toBeVisible();
   await expect(card.getByText(picked?.conceptTitle ?? "", { exact: true })).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
 });
 
 test("TC-179 대화한 개념으로 만든 문제를 퀴즈 탭에서 풀면 풀이 기록이 남고 다음 문제를 요청해요", async ({ page, learnerId }) => {
@@ -212,7 +212,7 @@ test("TC-192 대화 중 관련 문제 풀어보기를 누르면 퀴즈 탭으로
   await tab(page, "퀴즈").click();
   const panel = quizPanel(page);
   await expect(panel.getByText(unitProblem.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
 
   await tab(page, "AI 에이전트").click();
   await page.getByRole("tabpanel", { name: "에이전트" }).getByRole("button", { name: "관련 문제 풀어보기" }).click();
@@ -224,7 +224,7 @@ test("TC-192 대화 중 관련 문제 풀어보기를 누르면 퀴즈 탭으로
 
   releaseRelated();
   await expect(panel.getByText(relatedProblem.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
 });
 
 async function firstConcept(unitId: string) {
@@ -270,14 +270,14 @@ test("TC-196 문제를 풀다가 새로고침해도 같은 문제와 카운트�
   await tab(page, "퀴즈").click();
   const panel = quizPanel(page);
   await expect(panel.getByText(view.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
   await panel.getByText("HAVING", { exact: true }).click();
 
   await page.reload();
   await tab(page, "퀴즈").click();
 
   await expect(panel.getByText(view.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
   expect(requests).toBe(1);
 });
 
@@ -296,7 +296,7 @@ test("TC-197 문제를 제출한 뒤 새로고침하면 그 문제 대신 열린
   await tab(page, "퀴즈").click();
   const panel = quizPanel(page);
   await expect(panel.getByText(view.stem)).toBeVisible();
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
 
   await db.insert(quizAttempt).values({
     id: randomUUID(),
@@ -313,7 +313,7 @@ test("TC-197 문제를 제출한 뒤 새로고침하면 그 문제 대신 열린
   await tab(page, "퀴즈").click();
 
   await expect(panel.getByText(next.stem)).toBeVisible();
-  await expect(panel.getByText("2 / 5")).toBeVisible();
+  await expect(panel.getByText("2 / 3")).toBeVisible();
   expect(bodies).toEqual([{ unitId: first.id }, { unitId: first.id }]);
 });
 
@@ -397,9 +397,9 @@ test("TC-218 퀴즈 탭에서 답을 채점받으면 진행 게이지가 한 칸
   const card = panel.getByRole("region", { name: "퀴즈" });
   await expect(card.getByText(view.stem)).toBeVisible();
   const gauge = panel.getByRole("progressbar", { name: "문제 진행" });
-  await expect(gauge).toHaveAttribute("aria-valuemax", "5");
+  await expect(gauge).toHaveAttribute("aria-valuemax", "3");
   await expect(gauge).toHaveAttribute("aria-valuenow", "0");
-  await expect(panel.getByText("1 / 5")).toBeVisible();
+  await expect(panel.getByText("1 / 3")).toBeVisible();
 
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
