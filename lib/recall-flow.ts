@@ -20,14 +20,25 @@ export type RecallFlowEvent =
 
 type ProblemFlow = Extract<RecallFlow, { stage: "problem" }>;
 
+// 이미 푼 문항은 서버에 저장된 풀이로 결과에 모으고 다시 내지 않는다. 건너뛴 문항은 저장하지 않아 다시 낸다.
+function openFrom(set: RecallSetView, answers: RecallAnswer[], from: number): RecallFlow {
+  const index = set.items.findIndex((item, at) => at >= from && !item.answered);
+  if (index !== -1) return { stage: "problem", set, index, answers };
+  const ordered = set.items.flatMap((item) => answers.find((answer) => answer.itemId === item.id) ?? []);
+  return { stage: "result", set, answers: ordered };
+}
+
+function savedAnswers(set: RecallSetView): RecallAnswer[] {
+  return set.items.flatMap((item) => (item.answered ? { itemId: item.id, kind: "answered" as const, ...item.answered } : []));
+}
+
+// 시작한 세트는 입구를 다시 보이지 않고 남은 문항부터 이어 간다.
 export function startRecall(set: RecallSetView): RecallFlow {
-  return { stage: "entry", set };
+  return set.started ? openFrom(set, savedAnswers(set), 0) : { stage: "entry", set };
 }
 
 function moveOn(flow: ProblemFlow, answer: RecallAnswer): RecallFlow {
-  const answers = [...flow.answers, answer];
-  const index = flow.index + 1;
-  return index < flow.set.items.length ? { ...flow, index, answers } : { stage: "result", set: flow.set, answers };
+  return openFrom(flow.set, [...flow.answers, answer], flow.index + 1);
 }
 
 // 단계마다 받을 수 있는 이벤트만 상태를 바꾸고, 나머지는 그대로 둔다.
@@ -35,9 +46,7 @@ export function advanceRecall(flow: RecallFlow, event: RecallFlowEvent): RecallF
   switch (flow.stage) {
     case "entry":
       if (event.type !== "start") return flow;
-      return flow.set.items.length > 0
-        ? { stage: "problem", set: flow.set, index: 0, answers: [] }
-        : { stage: "result", set: flow.set, answers: [] };
+      return openFrom(flow.set, savedAnswers(flow.set), 0);
     case "problem": {
       const item = flow.set.items[flow.index];
       if (!item || event.type === "start") return flow;
@@ -51,6 +60,11 @@ export function advanceRecall(flow: RecallFlow, event: RecallFlowEvent): RecallF
     case "result":
       return flow;
   }
+}
+
+// 뒤에 이미 푼 문항만 남았으면 이 문제를 넘길 때 결과로 간다.
+export function isLastProblem(flow: ProblemFlow): boolean {
+  return !flow.set.items.some((item, at) => at > flow.index && !item.answered);
 }
 
 // 문제 단계에서만 몇 번째 문제인지 보여 준다.
