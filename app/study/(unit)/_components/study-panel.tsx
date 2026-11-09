@@ -5,6 +5,7 @@ import { type KeyboardEvent, useRef, useState } from "react";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { type QuizTab, type QuizTabEvent, advanceQuizTab, fetchProblem, settleProblem, startQuizTab } from "@/lib/quiz-tab";
 import { QuestionPanel } from "./question-panel";
+import { QuizGuide } from "./quiz-guide";
 
 const TABS = [
   { id: "agent", label: "에이전트" },
@@ -84,6 +85,8 @@ export function StudyPanel() {
         <QuestionPanel onSolveRelated={solveRelated} />
       </div>
       <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="min-h-0 flex-1 overflow-y-auto p-5">
+        {/* 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다. */}
+        <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
         <QuizTabBody
           tab={quiz}
           onRetry={() => sendQuiz({ type: "retry" })}
