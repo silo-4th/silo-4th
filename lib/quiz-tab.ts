@@ -16,6 +16,7 @@ function savedProblemKey(learnerId: string) {
   return `quiz-tab-problem:${learnerId}`;
 }
 
+// idle은 퀴즈 홈이다. 문제 생성에 비용이 들어서 학습자가 AI 맞춤 문제 풀기를 누르거나 풀던 문제가 있을 때만 enter를 보낸다.
 // number는 지금 풀거나 받는 중인 문제가 몇 번째인지다.
 // 화면은 loading 단계에 새로 들어올 때만 문제를 요청하므로, 같은 단계에 머무는 동안에는 요청이 하나뿐이다.
 export type QuizTab =
@@ -115,6 +116,11 @@ export function fetchProblem(ask: ProblemAsk): Promise<Fetched<ProblemView> | un
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(askOf(ask)),
   });
+}
+
+export async function fetchPersonalized(unitId: string): Promise<boolean | undefined> {
+  const home = await fetchJson<{ personalized: boolean }>(`/api/quiz-home?${new URLSearchParams({ unitId })}`);
+  return home?.body.personalized;
 }
 
 export async function fetchResumedProblem({ problemId, shownAt }: { problemId: string; shownAt?: string }): Promise<ProblemResult> {

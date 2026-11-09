@@ -2,7 +2,7 @@
 
 import { X } from "lucide-react";
 import { useParams } from "next/navigation";
-import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
@@ -12,6 +12,7 @@ import {
   type QuizTab,
   type QuizTabEvent,
   advanceQuizTab,
+  fetchPersonalized,
   fetchProblem,
   fetchResumedProblem,
   gaugeFilled,
@@ -79,7 +80,9 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
 
   function open(id: TabId) {
     setShown(id);
-    if (id === "quiz") sendQuiz({ type: "enter", unitId, saved: readSavedProblem(learnerId) });
+    if (id !== "quiz") return;
+    const saved = readSavedProblem(learnerId);
+    if (saved) sendQuiz({ type: "enter", unitId, saved });
   }
 
   // 누른 버튼이 숨는 에이전트 탭에 있으므로 포커스를 퀴즈 탭으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
@@ -147,10 +150,17 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
         <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="flex min-h-0 flex-1 flex-col">
           <QuizTabBody
             tab={quiz}
+            unitId={unitId}
+            active={opened && shown === "quiz"}
             guide={
               // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
               <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
             }
+            onStart={() => {
+              // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
+              sendQuiz({ type: "enter", unitId });
+              tabs.current.get("quiz")?.focus();
+            }}
             onRetry={() => sendQuiz({ type: "retry" })}
             onNext={() => sendQuiz({ type: "next", unitId })}
           />
@@ -160,7 +170,9 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   );
 }
 
-function QuizTabBody({ tab, guide, onRetry, onNext }: { tab: QuizTab; guide: ReactNode; onRetry: () => void; onNext: () => void }) {
+type QuizTabBodyProps = { tab: QuizTab; unitId: string; active: boolean; guide: ReactNode; onStart: () => void; onRetry: () => void; onNext: () => void };
+
+function QuizTabBody({ tab, unitId, active, guide, onStart, onRetry, onNext }: QuizTabBodyProps) {
   // 채점을 받은 탭 상태다. 기본 문제는 같은 ID로 다시 나올 수 있어, ID 대신 문제를 띄울 때마다 새로 생기는 상태로 비교한다.
   const [gradedTab, setGradedTab] = useState<QuizTab>();
   const graded = gradedTab === tab;
@@ -169,6 +181,8 @@ function QuizTabBody({ tab, guide, onRetry, onNext }: { tab: QuizTab; guide: Rea
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
       {guide}
+      {/* 읽고 물어볼 때마다 안내가 바뀌므로, 탭을 열 때마다 새로 그려 다시 묻는다. */}
+      {tab.stage === "idle" && active && <QuizHome unitId={unitId} onStart={onStart} />}
       {waiting && (
         <div className="flex justify-center pt-8">
           <Mascot size={88} spin={tab.stage !== "failed"} />
@@ -193,6 +207,44 @@ function QuizTabBody({ tab, guide, onRetry, onNext }: { tab: QuizTab; guide: Rea
           <QuizCard key={tab.problem.id} problem={tab.problem} onGraded={() => setGradedTab(tab)} onNext={onNext} pinNext />
         </>
       )}
+    </div>
+  );
+}
+
+// 안내 문구는 응답을 받은 뒤에 보여 준다. 받기 전에 한쪽 문구를 띄우면 틀린 안내가 잠깐 보인다.
+function QuizHome({ unitId, onStart }: { unitId: string; onStart: () => void }) {
+  const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean }>();
+  useEffect(() => {
+    let current = true;
+    void fetchPersonalized(unitId).then((value) => {
+      if (current && value !== undefined) setPersonalized({ unitId, value });
+    });
+    return () => {
+      current = false;
+    };
+  }, [unitId]);
+  const known = personalized?.unitId === unitId ? personalized.value : undefined;
+
+  return (
+    <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
+      <Mascot size={96} />
+      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">확인 문제</h2>
+      {known !== undefined && (
+        <p className="text-[13.5px] leading-relaxed text-gray">
+          {known ? "AI가 내가 나눈 대화를 바탕으로" : "AI가 내 대화를 바탕으로 문제를 내요."}
+          <br />
+          {known ? `${SET_SIZE}문제를 출제해요.` : "아직 나눈 대화가 없어서 기출 문제로 준비했어요."}
+        </p>
+      )}
+      <div className="mt-6 flex w-full flex-col gap-2">
+        <button type="button" onClick={onStart} className="btn btn-dark btn-lg btn-block">
+          AI 맞춤 문제 풀기
+        </button>
+        {/* 지난 문제 목록은 4-135에서 붙인다. */}
+        <button type="button" disabled className="btn btn-lg btn-block">
+          지난 문제 보기
+        </button>
+      </div>
     </div>
   );
 }

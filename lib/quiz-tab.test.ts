@@ -19,7 +19,7 @@ function run(tab: QuizTab, ...events: QuizTabEvent[]): QuizTab {
 }
 
 describe("퀴즈 탭", () => {
-  it("TC-174 퀴즈 탭에 처음 들어가면 열린 단원으로 문제 하나를 요청하고, 문제를 만드는 동안에는 더 요청하지 않아요", () => {
+  it("TC-174 퀴즈 홈에서 AI 맞춤 문제 풀기를 누르면 열린 단원으로 문제 하나를 요청하고, 문제를 만드는 동안에는 더 요청하지 않아요", () => {
     const loading = run(startQuizTab(), { type: "enter", unitId: unitA });
     expect(loading).toMatchObject({ stage: "loading", unitId: unitA, number: 1 });
 

@@ -117,6 +117,20 @@ async function askedConcepts(
   return rows;
 }
 
+// 이 단원에서 본 절과 물어본 절이다. 비어 있으면 AI 대신 기본 문제를 낸다.
+async function unitCandidates(learnerId: string, unitId: string) {
+  const [viewed, asked] = await Promise.all([
+    viewedConcepts(learnerId, unitId),
+    askedConcepts(learnerId, unitId),
+  ]);
+  return { candidates: uniqueById([...viewed, ...asked]), asked };
+}
+
+// 퀴즈 홈은 문제를 만들기 전에 기본 문제로 대신할지 알려 준다.
+export async function hasUnitCandidates(learnerId: string, unitId: string) {
+  return (await unitCandidates(learnerId, unitId)).candidates.length > 0;
+}
+
 async function questionConcepts(questionId: string) {
   return getDb()
     .select({ id: concept.id, title: concept.title, unitId: concept.unitId })
@@ -328,14 +342,13 @@ type Plan = {
 };
 
 async function unitPlan(learnerId: string, unitId: string): Promise<Plan> {
-  const [viewed, asked, summaries] = await Promise.all([
-    viewedConcepts(learnerId, unitId),
-    askedConcepts(learnerId, unitId),
+  const [{ candidates, asked }, summaries] = await Promise.all([
+    unitCandidates(learnerId, unitId),
     recentSummaries(learnerId, unitId),
   ]);
   return {
     unitId,
-    candidates: uniqueById([...viewed, ...asked]),
+    candidates,
     asked,
     context: { kind: "summaries", summaries },
     sourceQuestionId: null,
@@ -362,10 +375,7 @@ async function questionPlan(
   const candidates =
     inUnit.length > 0
       ? inUnit
-      : uniqueById([
-          ...(await viewedConcepts(learnerId, unitId)),
-          ...(await askedConcepts(learnerId, unitId)),
-        ]);
+      : (await unitCandidates(learnerId, unitId)).candidates;
   return {
     unitId,
     candidates,
