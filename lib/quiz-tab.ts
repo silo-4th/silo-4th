@@ -1,6 +1,7 @@
 import type { Solved } from "@/lib/quiz-card";
 import type { ProblemView, ResumedProblem } from "@/lib/quiz-problems";
 import { RESULT_CHIPS, type ResultChip, chipOf, needsReview, resultTitle } from "@/lib/recall-result";
+import { studyDay } from "@/lib/study-day";
 
 // 생성은 30초까지 걸릴 수 있다. 응답이 오지 않는 요청을 끝없이 기다리지 않게 넉넉히 기다린 뒤 실패로 본다.
 export const PROBLEM_TIMEOUT_MS = 45_000;
@@ -45,7 +46,8 @@ export type QuizTabEvent =
   | { type: "graded"; solved: Solved }
   | { type: "next"; unitId: string; solved?: Solved }
   | { type: "restart"; unitId: string }
-  | { type: "home" };
+  | { type: "home" }
+  | { type: "dismiss" };
 
 // 문제 생성 비용 때문에 세 문제를 한 묶음으로 센다. 마지막 문제를 넘기면 결과를 보여 준다.
 // 예전에 세 문제를 넘겨 기억해 둔 카운트가 있을 수 있어, 게이지는 가득 찬 채로 두고 그 문제를 넘기면 결과로 간다.
@@ -104,11 +106,25 @@ export function advanceQuizTab(tab: QuizTab, event: QuizTabEvent): QuizTab {
 }
 
 // 탭 상태와 묶음 결과를 함께 옮긴다. 탭 상태가 바뀔 때만 문제를 요청하므로, 칩만 바뀐 상태는 요청을 늘리지 않는다.
-export type QuizSet = { tab: QuizTab; results: SetResults };
+// finished는 이 학습자가 오늘 학습일에 한 묶음을 마쳤는지다. 베타 동안에는 문제 생성 비용 때문에 마친 학습자가 새 묶음을 시작하지 못하고,
+// 시작하려 하면 betaNotice로 막혔다는 안내를 띄운다.
+export type QuizSet = { tab: QuizTab; results: SetResults; finished: boolean; betaNotice: boolean };
 export type QuizSetEvent = QuizTabEvent;
 
-export function startQuizSet(): QuizSet {
-  return { tab: startQuizTab(), results: [] };
+export function startQuizSet(finished = false): QuizSet {
+  return { tab: startQuizTab(), results: [], finished, betaNotice: false };
+}
+
+// 마지막 문제를 채점받거나 넘기는 순간 묶음을 마친 것으로 센다. 채점받고 결과 보기 전에 새로고침해도 마친 날이 남아야 하고,
+// 이어 풀기로 결과에 다시 들어온 것은 지난 학습일에 마친 묶음일 수 있어 세지 않는다.
+export function completesSet(tab: QuizTab, event: QuizSetEvent): boolean {
+  return tab.stage === "problem" && tab.number >= SET_SIZE && (event.type === "graded" || event.type === "next");
+}
+
+// 기억해 둔 문제로 이어 푸는 enter는 새 묶음이 아니다. 퀴즈 홈의 AI 맞춤 문제 풀기만 saved 없이 enter를 보낸다.
+function startsNewSet(tab: QuizTab, event: QuizSetEvent): boolean {
+  if (tab.stage === "result") return event.type === "restart";
+  return tab.stage === "idle" && event.type === "enter" && !event.saved;
 }
 
 function withSlot(results: SetResults, number: number, slot: SlotResult | null): SetResults {
@@ -133,9 +149,12 @@ function resultsAfter({ tab, results }: QuizSet, next: QuizTab, event: QuizSetEv
 }
 
 export function advanceQuizSet(set: QuizSet, event: QuizSetEvent): QuizSet {
+  if (event.type === "dismiss") return set.betaNotice ? { ...set, betaNotice: false } : set;
+  if (set.finished && startsNewSet(set.tab, event)) return set.betaNotice ? set : { ...set, betaNotice: true };
   const tab = advanceQuizTab(set.tab, event);
   const results = resultsAfter(set, tab, event);
-  return tab === set.tab && results === set.results ? set : { tab, results };
+  const finished = set.finished || completesSet(set.tab, event);
+  return tab === set.tab && results === set.results && finished === set.finished ? set : { ...set, tab, results, finished };
 }
 
 export function setItems(results: SetResults): SlotResult[] {
@@ -238,6 +257,30 @@ function parseResults(results: unknown): SetResults | undefined {
   if (!Array.isArray(results)) return undefined;
   const slots = results.map(parseSlot);
   return slots.every((slot) => slot !== undefined) ? slots : undefined;
+}
+
+// 결과 화면을 나가면 풀던 문제는 지우므로, 묶음을 마쳤다는 사실은 따로 남겨야 새로고침 뒤에도 막힌다.
+function finishedKey(learnerId: string) {
+  return `quiz-tab-finished:${learnerId}`;
+}
+
+export function readSetFinished(learnerId: string): boolean {
+  try {
+    return finishedToday(localStorage.getItem(finishedKey(learnerId)) ?? undefined, new Date());
+  } catch {
+    return false;
+  }
+}
+
+// 베타 동안의 제한은 하루 한 묶음이라, 묶음을 마친 학습일이 지나면 다시 새 묶음을 시작할 수 있다.
+export function finishedToday(finishedDay: string | undefined, now: Date): boolean {
+  return finishedDay === studyDay(now);
+}
+
+export function saveSetFinished(learnerId: string) {
+  try {
+    localStorage.setItem(finishedKey(learnerId), studyDay(new Date()));
+  } catch {}
 }
 
 export function clearSavedProblem(learnerId: string) {
