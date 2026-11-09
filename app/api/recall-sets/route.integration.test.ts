@@ -408,5 +408,10 @@ describe("꺼내 먹기 세트 준비", () => {
     const set = await onlySet(learnerId);
     expect(set.sourceStudyDay).toBe(studyDay(daysAgo(1)));
     expect(await itemsOf(set.id)).toHaveLength(3);
+    const problems = await getDb()
+      .select({ id: quizProblem.id })
+      .from(quizProblem)
+      .where(eq(quizProblem.learnerId, learnerId));
+    expect(problems).toHaveLength(3);
   });
 });
