@@ -87,11 +87,15 @@ async function post(path: string, init: RequestInit = {}): Promise<Response | un
   }
 }
 
+// 세트 준비는 서버에서 AI 문제 생성을 30초에서 끊는다. 채점과 같이 서버 상한의 두 배를 기다린 뒤 실패로 본다.
+// 정상 응답을 끊지 않으면서, 서버가 멈췄을 때 학습 화면이 끝없이 막히지 않게 하는 값이다.
+export const RECALL_CHECK_TIMEOUT_MS = 60_000;
+
 // 세트를 준비한 뒤 오늘 띄울 세트를 받는다. 준비가 실패해도 이미 만들어 둔 세트가 있을 수 있어 조회는 한다.
 // 어느 쪽이든 실패하면 꺼내 먹기 없이 학습 화면을 보여 주도록 null을 돌려준다.
 export async function openTodayRecall(): Promise<RecallSetView | null> {
-  await post("/api/recall-sets");
-  const response = await post("/api/recall-sets/today");
+  await post("/api/recall-sets", { signal: AbortSignal.timeout(RECALL_CHECK_TIMEOUT_MS) });
+  const response = await post("/api/recall-sets/today", { signal: AbortSignal.timeout(RECALL_CHECK_TIMEOUT_MS) });
   if (!response?.ok) return null;
   try {
     const { set } = (await response.json()) as { set: RecallSetView | null };
@@ -101,16 +105,26 @@ export async function openTodayRecall(): Promise<RecallSetView | null> {
   }
 }
 
-let recording: Promise<unknown> = Promise.resolve();
+// 네트워크가 잠깐 끊겨 시작 기록이 빠지면 뒤따르는 완료 기록도 서버가 거절하므로, 실패한 기록은 잠시 뒤 다시 보낸다.
+// 4xx는 다시 보내도 결과가 같아 다시 보내지 않는다.
+const EVENT_RETRY_DELAYS_MS = [1_000, 3_000];
 
-// 서버는 시작 기록이 있어야 완료를 받으므로, 앞 기록의 응답을 받은 뒤에 다음 기록을 보낸다.
-// 기록이 실패해도 학습자의 흐름은 막지 않는다. 화면을 떠나도 보낸 기록은 끝까지 가도록 keepalive를 쓴다.
-export function recordRecallEvent(setId: string, event: RecallEvent) {
-  recording = recording.then(() =>
-    post(`/api/recall-sets/${setId}/events`, {
+async function sendEvent(setId: string, event: RecallEvent) {
+  for (const delay of [0, ...EVENT_RETRY_DELAYS_MS]) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    const response = await post(`/api/recall-sets/${setId}/events`, {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event }),
       keepalive: true,
-    }),
-  );
+    });
+    if (response && response.status < 500) return;
+  }
+}
+
+let recording: Promise<unknown> = Promise.resolve();
+
+// 서버는 시작 기록이 있어야 완료를 받으므로, 앞 기록을 다시 보내는 것까지 끝난 뒤에 다음 기록을 보낸다.
+// 기록이 실패해도 학습자의 흐름은 막지 않는다. 화면을 떠나도 보낸 기록은 끝까지 가도록 keepalive를 쓴다.
+export function recordRecallEvent(setId: string, event: RecallEvent) {
+  recording = recording.then(() => sendEvent(setId, event));
 }
