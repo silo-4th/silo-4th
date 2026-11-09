@@ -2,13 +2,24 @@ import { createHmac, randomUUID } from "node:crypto";
 import { test as base } from "@playwright/test";
 import { asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
-import { learner, message, question, questionSession, sectionView, session, unit } from "@/lib/db/schema";
+import {
+  learner,
+  message,
+  question,
+  questionConcept,
+  questionSession,
+  quizAttempt,
+  quizProblem,
+  sectionView,
+  session,
+  unit,
+} from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { TEST_SOURCE } from "@/lib/source";
 import { studyDay } from "@/lib/study-day";
 import { sectionConceptId, unitSections } from "@/lib/unit-sections";
 
-const db = drizzle({ connection: env.DATABASE_URL });
+export const db = drizzle({ connection: env.DATABASE_URL });
 
 // Google 로그인 화면은 자동화로 통과할 수 없어, Better Auth가 로그인 끝에 남기는 세션 행과 서명 쿠키를 직접 만든다.
 function signedSessionCookie(token: string) {
@@ -35,13 +46,16 @@ export async function createLearner(consented = true) {
   return created.id;
 }
 
-// 질문 기록과 본 절 기록은 학습자를 지워도 함께 지워지지 않으므로 먼저 지운다.
+// 질문, 퀴즈, 본 절 기록은 학습자를 지워도 함께 지워지지 않으므로 먼저 지운다.
 // 화면을 닫을 때 보낸 본 절 기록이 정리 중에 도착할 수 있다. 학습자 줄을 먼저 잠가 그 기록이 끝난 뒤에 함께 지운다.
 export async function deleteLearner(learnerId: string) {
   const asked = db.select({ id: question.id }).from(question).where(eq(question.learnerId, learnerId));
   await db.batch([
     db.select({ id: learner.id }).from(learner).where(eq(learner.id, learnerId)).for("update"),
     db.delete(sectionView).where(eq(sectionView.learnerId, learnerId)),
+    db.delete(quizAttempt).where(eq(quizAttempt.learnerId, learnerId)),
+    db.delete(quizProblem).where(eq(quizProblem.learnerId, learnerId)),
+    db.delete(questionConcept).where(inArray(questionConcept.questionId, asked)),
     db.delete(message).where(inArray(message.questionId, asked)),
     db.delete(question).where(eq(question.learnerId, learnerId)),
     db.delete(questionSession).where(eq(questionSession.learnerId, learnerId)),

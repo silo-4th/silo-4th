@@ -37,4 +37,8 @@ export const env = {
   get APP_VERSION() {
     return process.env.VERCEL_GIT_COMMIT_SHA || "local";
   },
+  // Vercel이 배포 환경마다 production, preview로 넣는다. 로컬에서는 비어 있다.
+  get VERCEL_ENV() {
+    return process.env.VERCEL_ENV;
+  },
 };

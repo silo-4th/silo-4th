@@ -30,6 +30,7 @@ import {
   generateQuizProblem,
 } from "@/lib/llm/quiz-generation";
 import { type QuizProblemContent, parseQuizProblem } from "@/lib/quiz-problem";
+import { isUuid } from "@/lib/uuid";
 
 // 퀴즈 탭은 열어 둔 단원으로, 관련 문제 풀어보기는 그 질문으로 부른다.
 export type ProblemRequest =
@@ -54,7 +55,6 @@ export type Creation =
 
 type Concept = { id: string; title: string };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SUMMARY_LIMIT = 5;
 
 export function reportQuizProblemError(error: unknown) {
@@ -67,7 +67,7 @@ export function parseProblemRequest(
 ): ProblemRequest | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const { unitId, questionId } = input as Record<string, unknown>;
-  if (typeof questionId === "string" && UUID.test(questionId))
+  if (isUuid(questionId))
     return { kind: "question", questionId };
   if (questionId !== undefined) return undefined;
   if (typeof unitId === "string" && unitId) return { kind: "unit", unitId };
@@ -192,7 +192,7 @@ type StoredProblem = Pick<
   "id" | "format" | "conceptId" | "stem" | "hint" | "answer"
 > & { conceptTitle: string };
 
-function toView({
+export function toProblemView({
   id,
   format,
   conceptId,
@@ -207,7 +207,8 @@ function toView({
   return view;
 }
 
-const storedColumns = {
+// 정답과 해설을 뺀 문제 화면에 필요한 컬럼이다. concepts와 조인해서 읽는다.
+export const problemViewColumns = {
   id: quizProblem.id,
   format: quizProblem.format,
   conceptId: quizProblem.conceptId,
@@ -224,7 +225,7 @@ async function pickDefaultProblem(
 ): Promise<StoredProblem | undefined> {
   const db = getDb();
   const problems = await db
-    .select(storedColumns)
+    .select(problemViewColumns)
     .from(quizProblem)
     .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
     .where(
@@ -254,7 +255,7 @@ async function defaultProblem(
 ): Promise<ProblemView> {
   const picked = await pickDefaultProblem(learnerId, eq(concept.unitId, unitId));
   if (!picked) throw new Error(`단원 ${unitId}에 기본 문제가 없다.`);
-  return toView(picked);
+  return toProblemView(picked);
 }
 
 export async function conceptDefaultProblemId(
@@ -371,7 +372,7 @@ async function generate(
   if (!inserted) throw new Error("만든 문제를 저장하지 못했다.");
   return {
     kind: "ok",
-    problem: toView({ ...inserted, conceptTitle: target.title }),
+    problem: toProblemView({ ...inserted, conceptTitle: target.title }),
   };
 }
 
