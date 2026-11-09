@@ -238,7 +238,7 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
       )}
       {tab.stage === "problem" && (
         <>
-          {/* 관련 문제가 자리를 바꾸면 그 번호의 칸을 비우므로, 칸이 차 있으면 지금 문제를 채점받은 것이다. */}
+          {/* 그 번호에 문제가 뜰 때 칸을 비우므로, 칸이 차 있으면 지금 문제를 채점받은 것이다. */}
           <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, Boolean(results[tab.number - 1]))} />
           <QuizCard
             key={tab.problem.id}

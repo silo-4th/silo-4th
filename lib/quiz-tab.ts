@@ -16,7 +16,7 @@ export type SavedProblem = { problemId: string; number: number; shownAt?: string
 
 export type SlotResult = { conceptTitle: string; chip: ResultChip };
 
-// 번호마다 한 칸이다. 관련 문제가 그 번호의 문제를 바꾸면 칸을 비우고, 바뀐 문제를 채점받으면 다시 채운다.
+// 번호마다 한 칸이다. 관련 문제처럼 그 번호에 새 문제가 뜨면 칸을 비우고, 그 문제를 채점받으면 다시 채운다.
 export type SetResults = readonly (SlotResult | null)[];
 
 // 한 브라우저를 여러 학습자가 쓸 수 있어 학습자마다 따로 기억한다.
@@ -114,12 +114,13 @@ function withSlot(results: SetResults, number: number, slot: SlotResult | null):
 
 // 퀴즈 홈이나 결과에서 나가면 새 묶음이다. 기억해 둔 문제로 이어 풀 때만 남겨 둔 칩을 되살린다.
 // 칩은 채점받을 때 남기고, 채점을 받지 못한 채 넘길 때도 낸 답으로 남긴다.
+// 칸은 그 번호에 문제가 실제로 뜰 때 비운다. 관련 문제를 받는 중이나 풀지 않은 문제를 이어 풀기 전에 새로고침해도 앞서 받은 칩이 남는다.
 function resultsAfter({ tab, results }: QuizSet, next: QuizTab, event: QuizSetEvent): SetResults {
   if (tab.stage === "idle" || tab.stage === "result") {
     if (next === tab) return results;
     return event.type === "enter" ? (event.saved?.results ?? []) : [];
   }
-  if (event.type === "related") return next === tab || !("number" in next) ? results : withSlot(results, next.number, null);
+  if (event.type === "loaded" && next !== tab && next.stage === "problem") return withSlot(results, next.number, null);
   const solved = event.type === "graded" || event.type === "next" ? event.solved : undefined;
   if (tab.stage !== "problem" || !solved) return results;
   return withSlot(results, tab.number, { conceptTitle: tab.problem.conceptTitle, chip: chipOf(solved.submitted, solved.result) });
