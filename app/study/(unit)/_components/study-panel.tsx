@@ -175,7 +175,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
           </div>
         </div>
         <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
-          <QuestionPanel onSolveRelated={solveRelated} />
+          <QuestionPanel learnerId={learnerId} onSolveRelated={solveRelated} />
         </div>
         <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="flex min-h-0 flex-1 flex-col">
           <QuizTabBody
