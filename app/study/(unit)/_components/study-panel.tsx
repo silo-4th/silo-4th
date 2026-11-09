@@ -269,8 +269,10 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
   const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
   return (
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
-      {guide}
+    // 지난 문제의 제목 줄은 위에 붙어 있으므로, 키보드로 올라갈 때 그 아래로 스크롤해 포커스가 가려지지 않게 한다.
+    <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-5 ${pastShown ? "scroll-pt-14" : ""}`}>
+      {/* 지난 문제는 패널 맨 위에 제목 줄을 두므로 첫 진입 안내를 가린다. 닫은 안내가 다시 뜨지 않게 지우지 않고 숨긴다. */}
+      <div hidden={pastShown}>{guide}</div>
       {/* 읽고 물어볼 때마다 안내가 바뀌므로, 탭을 열 때마다 새로 그려 다시 묻는다. */}
       {tab.stage === "idle" &&
         active &&

@@ -1,10 +1,9 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { ChevronDown, ChevronLeft } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Mascot } from "@/app/_components/mascot";
 import { ResultChipLabel } from "@/app/_components/result-chip";
 import { PAST_FILTERS, type PastAttempt, type PastCard, type PastFilter, fetchPastAttempts, pastList } from "@/lib/past-problems";
 
@@ -18,7 +17,7 @@ export function focusOnMount(element: HTMLElement | null) {
   if (lost) element.focus();
 }
 
-type Loaded ={ kind: "loading" } | { kind: "failed" } | { kind: "loaded"; attempts: PastAttempt[] };
+type Loaded = { kind: "loading" } | { kind: "failed" } | { kind: "loaded"; attempts: PastAttempt[] };
 
 // 열 때마다 새로 받는다. 퀴즈 탭에서 방금 푼 문제도 바로 보여야 한다.
 export function PastProblems({ onBack }: { onBack: () => void }) {
@@ -43,20 +42,32 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col">
-      <button type="button" onClick={onBack} className="btn btn-sm btn-ghost -ml-2 self-start">
-        <ChevronLeft size={16} aria-hidden />
-        돌아가기
-      </button>
-      <h2 ref={focusOnMount} tabIndex={-1} className="mt-2 text-[21px] font-bold tracking-tight outline-none">
-        지난 문제
-      </h2>
+      {/* 패널 안쪽 여백을 넘어 패널 너비 전체에 아래 선을 긋고, 목록을 내려도 패널 맨 위에 남긴다. */}
+      <div className="sticky -top-5 z-10 -mx-5 -mt-5 flex h-[46.5px] flex-none items-center gap-1 border-b border-line-2 bg-white px-2.5">
+        <button type="button" aria-label="돌아가기" title="돌아가기" onClick={onBack} className="tool-btn flex-none">
+          <ChevronLeft size={20} aria-hidden />
+        </button>
+        <h2
+          ref={focusOnMount}
+          tabIndex={-1}
+          className="min-w-0 flex-1 truncate text-center text-base font-bold tracking-[-0.02em] text-ink outline-none"
+        >
+          지난 문제
+        </h2>
+        <span aria-hidden className="w-[34px] flex-none" />
+      </div>
       {loaded.kind === "loading" && (
-        <div className="flex justify-center pt-8">
-          <Mascot size={72} spin />
+        <div aria-hidden className="mt-2 flex flex-col">
+          {[0, 1, 2].map((row) => (
+            <div key={row} className="flex flex-col gap-2 border-t border-line-2 py-5 first:border-t-0">
+              <span className="h-3.5 w-2/5 animate-pulse rounded bg-line-2" />
+              <span className="h-3 w-3/5 animate-pulse rounded bg-line-2" />
+            </div>
+          ))}
         </div>
       )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
-      <p role="status" className={loaded.kind === "loaded" ? "sr-only" : "pt-2 text-center text-sm text-gray"}>
+      <p role="status" className={loaded.kind === "failed" ? "pt-6 text-center text-sm" : "sr-only"}>
         {loaded.kind === "loading" && "지난 문제를 불러오고 있어요"}
         {loaded.kind === "failed" && <span className="font-bold text-red">지난 문제를 불러오지 못했어요</span>}
       </p>
@@ -68,11 +79,7 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
         </div>
       )}
       {loaded.kind === "loaded" && loaded.attempts.length === 0 && (
-        <p className="pt-8 text-center text-sm leading-relaxed text-gray">
-          아직 푼 확인 문제가 없어요.
-          <br />
-          문제를 풀면 여기에 모여요.
-        </p>
+        <p className="pt-4 text-[13px] leading-relaxed text-gray">아직 푼 확인 문제가 없어요. 문제를 풀면 여기에 모여요.</p>
       )}
       {loaded.kind === "loaded" && loaded.attempts.length > 0 && (
         <>
@@ -97,11 +104,11 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
 }
 
 function PastList({ cards }: { cards: PastCard[] }) {
-  if (cards.length === 0) return <p className="pt-6 text-center text-sm text-gray">이 결과로 푼 문제가 없어요.</p>;
+  if (cards.length === 0) return <p className="pt-6 text-[13px] text-gray">이 결과로 푼 문제가 없어요.</p>;
   return (
-    <ul aria-label="지난 문제 목록" className="mt-3 flex flex-col gap-2">
+    <ul aria-label="지난 문제 목록" className="mt-2 flex flex-col pb-10">
       {cards.map((card) => (
-        <li key={card.attemptId}>
+        <li key={card.attemptId} className="border-t border-line-2 py-5 first:border-t-0">
           <PastItem card={card} />
         </li>
       ))}
@@ -114,32 +121,36 @@ function PastList({ cards }: { cards: PastCard[] }) {
 function PastItem({ card }: { card: PastCard }) {
   const [open, setOpen] = useState(false);
   return (
-    <details className="card p-4" onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="flex cursor-pointer list-none flex-col gap-2">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span className="chip">{card.unitTitle}</span>
-          <span className="chip">{card.formatLabel}</span>
-          <ResultChipLabel chip={card.chip} />
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="flex cursor-pointer list-none flex-col gap-2.5">
+        <span className="flex items-center gap-1.5">
+          <span className="chip h-6 min-w-0 rounded-sm">
+            <span className="truncate">{card.unitTitle}</span>
+          </span>
+          <span className="chip h-6 flex-none rounded-sm">{card.formatLabel}</span>
+          <span className="ml-auto flex flex-none items-center gap-1">
+            <ResultChipLabel chip={card.chip} />
+            <ChevronDown size={16} aria-hidden className={`text-gray transition-transform ${open ? "rotate-180" : ""}`} />
+          </span>
         </span>
-        {!open && <span className="line-clamp-2 text-[14.5px] font-semibold">{previewOf(card.stem)}</span>}
+        {!open && <span className="line-clamp-2 text-[15px] leading-normal font-bold text-ink">{previewOf(card.stem)}</span>}
       </summary>
       {open && (
         <>
-          <div className="unit-body mt-1 text-[15px] leading-normal font-semibold [&_pre]:text-[12.5px] [&_pre]:font-normal [&>:last-child]:mb-0">
+          <div className="unit-body mt-2.5 text-[15px] leading-normal font-bold text-ink [&_pre]:text-[12.5px] [&_pre]:font-normal [&>:last-child]:mb-0">
             <Markdown remarkPlugins={[remarkGfm]}>{card.stem}</Markdown>
           </div>
-          <dl className="mt-3 flex flex-col gap-2.5 border-t border-line pt-3 text-[13.5px] leading-relaxed">
-            <PastRow label="내 답">
-              <span className="whitespace-pre-wrap">{card.myAnswer}</span>
-            </PastRow>
-            <PastRow label="정답">
-              <span className="whitespace-pre-wrap">{card.correctAnswer}</span>
-            </PastRow>
-            <PastRow label="해설">
-              <div className="unit-body text-[13.5px] [&>:last-child]:mb-0">
-                <Markdown remarkPlugins={[remarkGfm]}>{card.explanation}</Markdown>
-              </div>
-            </PastRow>
+          <dl className="mt-3 grid grid-cols-2 gap-2">
+            <AnswerBox label="내 답">{card.myAnswer}</AnswerBox>
+            <AnswerBox label="정답" right>
+              {card.correctAnswer}
+            </AnswerBox>
+          </dl>
+          <dl className="mt-2 rounded-md border border-line px-3.5 py-3">
+            <dt className="mb-1 text-xs font-bold text-gray">해설</dt>
+            <dd className="unit-body text-[13.5px] leading-relaxed text-ink-2 [&>:last-child]:mb-0">
+              <Markdown remarkPlugins={[remarkGfm]}>{card.explanation}</Markdown>
+            </dd>
           </dl>
         </>
       )}
@@ -151,11 +162,13 @@ function previewOf(stem: string) {
   return stem.split("\n").find((line) => line.trim() !== "") ?? stem;
 }
 
-function PastRow({ label, children }: { label: string; children: ReactNode }) {
+function AnswerBox({ label, right = false, children }: { label: string; right?: boolean; children: ReactNode }) {
   return (
-    <div>
-      <dt className="text-xs font-semibold text-gray">{label}</dt>
-      <dd className="mt-0.5">{children}</dd>
+    <div className={`min-w-0 rounded-md px-3.5 py-3 ${right ? "bg-green-25" : "bg-bg"}`}>
+      <dt className={`mb-1 text-xs font-bold ${right ? "text-green-600" : "text-gray"}`}>{label}</dt>
+      <dd className={`text-[13.5px] leading-relaxed break-words whitespace-pre-wrap ${right ? "font-semibold text-ink" : "text-ink-2"}`}>
+        {children}
+      </dd>
     </div>
   );
 }
