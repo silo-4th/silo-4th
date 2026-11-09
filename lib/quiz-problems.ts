@@ -16,8 +16,9 @@ import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
 import {
   concept,
+  ISSUED_QUIZ_FORMATS,
   message,
-  QUIZ_FORMATS,
+  type QuizFormat,
   question,
   questionConcept,
   quizAttempt,
@@ -40,7 +41,7 @@ export type ProblemRequest =
 // 정답과 해설은 풀이를 저장한 뒤 풀이 저장 응답으로만 내려준다.
 export type ProblemView = {
   id: string;
-  format: (typeof QUIZ_FORMATS)[number];
+  format: QuizFormat;
   conceptId: string;
   conceptTitle: string;
   stem: string;
@@ -385,7 +386,7 @@ async function generate(
       kind: "ok",
       problem: await defaultProblem(learnerId, plan.unitId),
     };
-  const format = pickRandom(QUIZ_FORMATS) ?? "mcq";
+  const format = pickRandom(ISSUED_QUIZ_FORMATS) ?? "mcq";
   let content;
   try {
     content = await generateProblemContent({

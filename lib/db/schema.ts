@@ -21,6 +21,8 @@ export const QUESTION_STATUSES = ["pending", "ok", "error"] as const;
 export const MESSAGE_ROLES = ["user", "assistant"] as const;
 export const QUIZ_FORMATS = ["mcq", "blank", "free"] as const;
 export type QuizFormat = (typeof QUIZ_FORMATS)[number];
+// 새 문제는 이 포맷으로만 낸다. 서술형은 채점이 엄격하고 느려서 내지 않지만, 이미 저장된 서술형 문제와 풀이는 그대로 읽는다.
+export const ISSUED_QUIZ_FORMATS = ["mcq", "blank"] as const satisfies readonly QuizFormat[];
 export const CONFIDENCES = ["sure", "unsure", "guess"] as const;
 export const RECALL_REASONS = ["read_no_question", "asked", "quiz"] as const;
 

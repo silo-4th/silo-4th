@@ -1,4 +1,4 @@
-import { QUIZ_FORMATS, type QuizFormat } from "@/lib/db/schema";
+import { ISSUED_QUIZ_FORMATS, type QuizFormat } from "@/lib/db/schema";
 
 // 학습 기록 한 줄이다. 본 절은 section_views, 질문한 절은 questions와 question_concepts, 퀴즈를 푼 절은 퀴즈 탭 풀이에서 온다.
 export type RecallRecord = { conceptId: string; unitId: string; studyDay: string } & (
@@ -65,27 +65,25 @@ export function pickRecallTargets(records: readonly RecallRecord[], random: () =
   return [...shuffle(skipped, random).slice(0, SKIPPED_COUNT), ...shuffle(asked, random).slice(0, ASKED_COUNT)];
 }
 
-function permutations<T>(items: readonly T[]): T[][] {
-  if (items.length <= 1) return [[...items]];
-  return items.flatMap((item, index) =>
-    permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]),
-  );
+function sequences<T>(items: readonly T[], length: number): T[][] {
+  if (length === 0) return [[]];
+  return sequences(items, length - 1).flatMap((rest) => items.map((item) => [...rest, item]));
 }
 
-// 세 포맷이 한 번씩 나오도록 섞되, 단원과 맞지 않는 포맷은 그 문제에 붙이지 않는다.
+// 새로 내는 포맷이 빠짐없이 나오도록 섞되, 단원과 맞지 않는 포맷은 그 문제에 붙이지 않는다.
 // 그렇게 섞을 수 없으면 문제마다 맞는 포맷 안에서 랜덤으로 고른다.
 export function assignFormats(
   targets: readonly RecallTarget[],
   random: () => number = Math.random,
   excluded: ExcludedFormats = UNIT_EXCLUDED_FORMATS,
 ): RecallItem[] {
-  const allowed = targets.map((target) => QUIZ_FORMATS.filter((format) => !excluded[target.unitId]?.includes(format)));
+  const allowed = targets.map((target) =>
+    ISSUED_QUIZ_FORMATS.filter((format) => !excluded[target.unitId]?.includes(format)),
+  );
+  const covered = Math.min(targets.length, ISSUED_QUIZ_FORMATS.length);
   const fits = (order: QuizFormat[]) =>
-    allowed.every((formats, index) => {
-      const format = order[index];
-      return format !== undefined && formats.includes(format);
-    });
-  const order = shuffle(permutations(QUIZ_FORMATS), random).find(fits);
+    new Set(order).size === covered && allowed.every((formats, index) => formats.some((format) => format === order[index]));
+  const order = shuffle(sequences(ISSUED_QUIZ_FORMATS, targets.length), random).find(fits);
   return targets.map((target, index) => ({
     ...target,
     format: order?.[index] ?? shuffle(allowed[index] ?? [], random)[0] ?? "mcq",
