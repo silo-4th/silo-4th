@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { concept, learner, quizProblem, recallItem, recallSet, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { studyDay } from "@/lib/study-day";
+import { listUnits } from "@/lib/units";
 import { sectionConceptId, unitSections } from "@/lib/unit-sections";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -98,5 +99,19 @@ describe("꺼내 먹기 문항의 절 주소", () => {
       { unitId: first.unitId, key: first.key },
       { unitId: second.unitId, key: second.key },
     ]);
+  });
+
+  it("TC-231 본 절 기록이 없는 학습자가 오늘 세트를 받으면 오늘 공부를 이어 갈 곳으로 첫 단원이 절 키 없이 와요", async () => {
+    const { headers, learnerId } = await loginConsented();
+    const [picked] = await conceptsInTwoUnits();
+    if (!picked) throw new Error("개념이 있어야 한다.");
+    await newSetFor(learnerId, [picked.conceptId]);
+    const [firstUnit] = await listUnits();
+
+    const response = await requestToday(headers);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { set: { studyFrom?: Record<string, unknown> } | null };
+    expect(body.set?.studyFrom).toStrictEqual({ unitId: firstUnit?.id });
   });
 });
