@@ -1,6 +1,6 @@
 import { findLearner } from "@/lib/auth";
 import { env } from "@/lib/env";
-import { parseAttemptInput, reportQuizError, type Submission, submitAttempt } from "@/lib/quiz-attempts";
+import { listPastAttempts, parseAttemptInput, reportQuizError, type Submission, submitAttempt } from "@/lib/quiz-attempts";
 
 const REFUSED: Record<Exclude<Submission["kind"], "saved">, number> = {
   invalid: 400,
@@ -28,6 +28,18 @@ export async function POST(request: Request) {
     return status(500);
   }
   return submission.kind === "saved" ? Response.json(submission.result) : status(REFUSED[submission.kind]);
+}
+
+// 퀴즈 홈의 지난 문제 보기가 내가 퀴즈 탭에서 푼 풀이를 최근 순서로 받는다.
+export async function GET(request: Request) {
+  const learner = await findLearner(request.headers);
+  if (!learner) return status(401);
+  try {
+    return Response.json(await listPastAttempts(learner.id));
+  } catch (error) {
+    reportQuizError(error);
+    return status(500);
+  }
 }
 
 function status(code: number) {

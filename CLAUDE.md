@@ -23,7 +23,7 @@
 - 이미 있는 테스트는 고치지 않는다. 테스트가 실패하면 구현을 고친다. 테스트를 꼭 고쳐야 하면 이유를 설명하고 승인을 받는다.
 - 유형별 파일 이름과 실행 명령은 다음과 같다.
   - 단위 테스트는 Vitest로 쓰고, 파일 이름은 `*.test.ts`, 실행은 `npm test`다.
-  - 통합 테스트는 Vitest로 쓰고, 파일 이름은 `*.integration.test.ts`, 실행은 `npm run test:integration`이다. DB를 변경하는 서버 코드에만 쓰고, 실제 테스트 DB에 남은 결과를 확인한다. Anthropic SDK는 목으로 바꾼다.
+  - 통합 테스트는 Vitest로 쓰고, 파일 이름은 `*.integration.test.ts`, 실행은 `npm run test:integration`이다. DB를 변경하거나 학습자별로 조회를 제한하는 서버 코드에만 쓰고, 실제 테스트 DB에 남은 결과나 돌려준 범위를 확인한다. Anthropic SDK는 목으로 바꾼다.
   - E2E는 Playwright로 쓰고, 파일은 `e2e/*.spec.ts`, 실행은 `npm run test:e2e`다. 주요 사용자 흐름과 `async` 서버 컴포넌트를 확인한다.
 - React Testing Library로 컴포넌트 테스트를 쓰지 않는다. 화면 안의 변환 로직은 함수로 빼서 단위 테스트한다.
 

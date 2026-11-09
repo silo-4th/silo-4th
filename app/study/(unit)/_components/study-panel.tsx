@@ -32,6 +32,7 @@ import {
   settleQuizSet,
   startQuizSet,
 } from "@/lib/quiz-tab";
+import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
 
@@ -255,13 +256,36 @@ type QuizTabBodyProps = {
 
 function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, onNext, onLeaveResult }: QuizTabBodyProps) {
   const { tab, results } = set;
+  // 지난 문제를 연 퀴즈 홈 상태다. 관련 문제로 홈을 떠났다가 돌아오면 새 홈 상태라 지난 문제가 아니라 홈을 보여 준다.
+  const [pastOf, setPastOf] = useState<QuizTab>();
+  const pastShown = pastOf === tab;
+  // 누른 돌아가기 버튼이 사라지므로 지난 문제 보기 버튼으로 포커스를 돌려준다. 돌아온 직후 한 번만 옮겨, 나중에 탭을 다시 열 때는 옮기지 않는다.
+  const backPending = useRef(false);
+  const [focusBack] = useState(() => (element: HTMLElement | null) => {
+    if (!element || !backPending.current) return;
+    backPending.current = false;
+    focusOnMount(element);
+  });
   const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
   return (
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
-      {guide}
+    // 지난 문제의 제목 줄은 위에 붙어 있으므로, 키보드로 올라갈 때 그 아래로 스크롤해 포커스가 가려지지 않게 한다.
+    <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-5 ${pastShown ? "scroll-pt-14" : ""}`}>
+      {/* 지난 문제는 패널 맨 위에 제목 줄을 두므로 첫 진입 안내를 가린다. 닫은 안내가 다시 뜨지 않게 지우지 않고 숨긴다. */}
+      <div hidden={pastShown}>{guide}</div>
       {/* 읽고 물어볼 때마다 안내가 바뀌므로, 탭을 열 때마다 새로 그려 다시 묻는다. */}
-      {tab.stage === "idle" && active && <QuizHome unitId={unitId} onStart={onStart} />}
+      {tab.stage === "idle" &&
+        active &&
+        (pastShown ? (
+          <PastProblems
+            onBack={() => {
+              backPending.current = true;
+              setPastOf(undefined);
+            }}
+          />
+        ) : (
+          <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
+        ))}
       {waiting && (
         <div className="flex justify-center pt-8">
           <Mascot size={88} spin={tab.stage !== "failed"} />
@@ -299,19 +323,11 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
   );
 }
 
-// 누른 결과 보기 버튼이 사라지므로, 키보드와 스크린리더 사용자가 결과를 바로 읽도록 제목으로 포커스를 옮긴다.
-// 이어 풀기로 결과가 뜰 때는 패널 밖에서 읽던 자리를 빼앗지 않는다.
-function focusHeading(element: HTMLHeadingElement | null) {
-  if (!element) return;
-  const focused = element.ownerDocument.activeElement;
-  const stayed = !focused || focused === element.ownerDocument.body || element.closest('[role="tabpanel"]')?.contains(focused);
-  if (stayed) element.focus();
-}
-
+// 누른 결과 보기 버튼이 사라지므로 제목으로 포커스를 옮긴다. 이어 풀기로 결과가 뜰 때는 패널 밖에서 읽던 자리를 빼앗지 않는다.
 function QuizResult({ results, onLeave }: { results: SetResults; onLeave: (leave: Leave) => void }) {
   return (
     <div className="flex flex-col">
-      <h2 ref={focusHeading} tabIndex={-1} className="text-[21px] leading-snug font-bold tracking-tight outline-none">
+      <h2 ref={focusOnMount} tabIndex={-1} className="text-[21px] leading-snug font-bold tracking-tight outline-none">
         {setTitle(results)}
       </h2>
       <ol className="mt-5 flex flex-col gap-2">
@@ -338,7 +354,9 @@ function QuizResult({ results, onLeave }: { results: SetResults; onLeave: (leave
 }
 
 // 안내 문구는 응답을 받은 뒤에 보여 준다. 받기 전에 한쪽 문구를 띄우면 틀린 안내가 잠깐 보인다.
-function QuizHome({ unitId, onStart }: { unitId: string; onStart: () => void }) {
+type QuizHomeProps = { unitId: string; pastRef: (element: HTMLElement | null) => void; onStart: () => void; onPast: () => void };
+
+function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
   const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean }>();
   useEffect(() => {
     let current = true;
@@ -366,8 +384,7 @@ function QuizHome({ unitId, onStart }: { unitId: string; onStart: () => void }) 
         <button type="button" onClick={onStart} className="btn btn-dark btn-lg btn-block">
           AI 맞춤 문제 풀기
         </button>
-        {/* 지난 문제 목록은 4-135에서 붙인다. */}
-        <button type="button" disabled className="btn btn-lg btn-block">
+        <button type="button" ref={pastRef} onClick={onPast} className="btn btn-lg btn-block">
           지난 문제 보기
         </button>
       </div>
