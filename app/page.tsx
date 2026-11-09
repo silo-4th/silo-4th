@@ -39,11 +39,8 @@ async function Login({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
 
 function Preview() {
   return (
-    <section
-      aria-hidden
-      className="m-4 flex min-h-[220px] flex-col items-center justify-center gap-7 overflow-hidden rounded-[20px] border border-green-50 bg-green-25 p-6 min-[861px]:m-6 min-[861px]:p-9"
-    >
-      <div className="flex w-full items-end justify-center gap-3.5">
+    <section className="m-4 flex min-h-[220px] flex-col items-center justify-center gap-7 overflow-hidden rounded-[20px] border border-green-50 bg-green-25 p-6 min-[861px]:m-6 min-[861px]:p-9">
+      <div aria-hidden className="flex w-full items-end justify-center gap-3.5">
         <Image src={mascot} alt="" width={72} height={72} className="flex-none" />
         <div className="w-full rounded-[14px] bg-white p-4 shadow-[0_12px_32px_rgba(0,90,50,0.12)] min-[861px]:w-[300px]">
           <div className="mb-1.5 text-xs text-gray-2">WHERE와 HAVING 확인 문제</div>
