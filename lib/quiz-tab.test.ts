@@ -70,3 +70,12 @@ describe("관련 문제", () => {
     expect(settleProblem(relatedLoading, relatedLoading, related)).toEqual({ stage: "problem", number: 1, problem: related });
   });
 });
+
+describe("이어 풀기", () => {
+  it("TC-199 기억해 둔 문제를 다시 불러오지 못하면 같은 카운트로 열린 단원의 새 문제를 만들어요", () => {
+    const resuming = run(startQuizTab(), { type: "enter", unitId: unitA, saved: { problemId: problem.id, number: 3 } });
+    expect(resuming).toMatchObject({ stage: "resuming", number: 3, problemId: problem.id });
+
+    expect(run(resuming, { type: "failed" })).toEqual({ stage: "loading", number: 3, unitId: unitA });
+  });
+});

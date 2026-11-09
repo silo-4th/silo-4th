@@ -3,7 +3,18 @@
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { QuizCard } from "@/app/_components/quiz-card";
-import { type QuizTab, type QuizTabEvent, advanceQuizTab, fetchProblem, settleProblem, startQuizTab } from "@/lib/quiz-tab";
+import {
+  type ProblemResult,
+  type QuizTab,
+  type QuizTabEvent,
+  advanceQuizTab,
+  fetchProblem,
+  fetchResumedProblem,
+  readSavedProblem,
+  saveProblem,
+  settleProblem,
+  startQuizTab,
+} from "@/lib/quiz-tab";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
 
@@ -17,29 +28,43 @@ type TabId = (typeof TABS)[number]["id"];
 // 디자인 시안처럼 다섯 문제를 한 묶음으로 센다.
 const SET_SIZE = 5;
 
-// 다음 상태가 새 loading 단계일 때만 문제를 요청한다. 이벤트에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
-function useQuizTab() {
+// 상태가 바뀔 때만 요청하고 기억한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
+// 이어 풀기 응답이 다시 새 문제 요청으로 이어지므로, 응답을 반영할 때도 지금 상태를 ref로 읽어 바로 다음 요청을 보낸다.
+function useQuizTab(learnerId: string) {
   const [tab, setTab] = useState<QuizTab>(startQuizTab);
-  function send(event: QuizTabEvent) {
-    const next = advanceQuizTab(tab, event);
-    if (next === tab) return;
+  const current = useRef(tab);
+
+  // shownAt은 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
+  function commit(next: QuizTab, shownAt?: string) {
+    current.current = next;
     setTab(next);
-    if (next.stage !== "loading") return;
-    void fetchProblem(next).then((problem) => setTab((current) => settleProblem(current, next, problem)));
+    if (next.stage === "problem") saveProblem(learnerId, { problemId: next.problem.id, number: next.number, shownAt });
+    if (next.stage === "loading") void fetchProblem(next).then((served) => settle(next, served?.body, served?.servedAt));
+    if (next.stage === "resuming") void fetchResumedProblem(next).then((problem) => settle(next, problem, next.shownAt));
+  }
+
+  function settle(requested: QuizTab, problem: ProblemResult, shownAt?: string) {
+    const next = settleProblem(current.current, requested, problem);
+    if (next !== current.current) commit(next, shownAt);
+  }
+
+  function send(event: QuizTabEvent) {
+    const next = advanceQuizTab(current.current, event);
+    if (next !== current.current) commit(next);
   }
   return [tab, send] as const;
 }
 
 // 레이아웃에 두어 단원을 옮겨도 대화와 퀴즈가 남는다. 숨긴 탭도 그대로 두어 탭을 오가도 풀던 답과 받는 중인 답이 남는다.
-export function StudyPanel() {
+export function StudyPanel({ learnerId }: { learnerId: string }) {
   const { unitId } = useParams<{ unitId: string }>();
   const [shown, setShown] = useState<TabId>("agent");
-  const [quiz, sendQuiz] = useQuizTab();
+  const [quiz, sendQuiz] = useQuizTab(learnerId);
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
 
   function open(id: TabId) {
     setShown(id);
-    if (id === "quiz") sendQuiz({ type: "enter", unitId });
+    if (id === "quiz") sendQuiz({ type: "enter", unitId, saved: readSavedProblem(learnerId) });
   }
 
   // 누른 버튼이 숨는 에이전트 탭에 있으므로 포커스를 퀴즈 탭으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
@@ -108,6 +133,7 @@ function QuizTabBody({ tab, onRetry, onNext }: { tab: QuizTab; onRetry: () => vo
             문제를 만들고 있어요
           </span>
         )}
+        {tab.stage === "resuming" && "풀던 문제를 불러오고 있어요"}
         {tab.stage === "failed" && <span className="font-bold text-red">문제를 만들지 못했어요</span>}
       </p>
       {tab.stage === "failed" && (
