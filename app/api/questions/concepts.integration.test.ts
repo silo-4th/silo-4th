@@ -431,4 +431,28 @@ describe("질문 개념 분류와 요약", () => {
     expect(sent).not.toContain("과거 요약 B");
     expect(sent).not.toContain("과거 요약 D");
   });
+
+  it("TC-242 답변 AI에게 넘기는 과거 질문 요약마다 한국 시간 기준으로 물어본 날짜를 M/D로 붙여요", async () => {
+    const { headers, learnerId } = await loginConsented();
+    const { id: unitId } = await firstUnit();
+    const [x] = await newConcepts(1);
+    await pastQuestion(learnerId, {
+      summary: "과거 요약 A",
+      conceptIds: [x!],
+      askedAt: new Date("2026-11-04T16:00:00Z"),
+    });
+    await pastQuestion(learnerId, {
+      summary: "과거 요약 B",
+      conceptIds: [x!],
+      askedAt: new Date("2026-11-06T03:00:00Z"),
+    });
+    aiClassifies([x!]);
+
+    await events(await ask({ questionId: newQuestionId(), unitId, content: "개념 X 질문" }, headers));
+
+    const [request] = ai.stream.mock.lastCall as [{ system: { text: string }[] }];
+    const pastBlock = request.system.find(({ text }) => text.includes("<past_questions>"))?.text;
+    expect(pastBlock).toContain("- 11/5 · 과거 요약 A\n- 11/6 · 과거 요약 B");
+    expect(pastBlock).toContain("줄 앞의 날짜는 물어본 날이다.");
+  });
 });
