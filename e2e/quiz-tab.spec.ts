@@ -27,7 +27,7 @@ async function openFirstUnit(page: Page) {
   return first;
 }
 
-function tab(page: Page, name: "에이전트" | "퀴즈") {
+function tab(page: Page, name: "AI 에이전트" | "퀴즈") {
   return page.getByRole("tab", { name, exact: true });
 }
 
@@ -52,7 +52,7 @@ test("TC-176 에이전트 탭에 갔다가 퀴즈 탭으로 돌아오면 풀던 
   await expect(panel.getByText("1 / 5")).toBeVisible();
   await panel.getByText("HAVING", { exact: true }).click();
 
-  await tab(page, "에이전트").click();
+  await tab(page, "AI 에이전트").click();
   await expect(panel).toBeHidden();
   await tab(page, "퀴즈").click();
 
@@ -214,7 +214,7 @@ test("TC-192 대화 중 관련 문제 풀어보기를 누르면 퀴즈 탭으로
   await expect(panel.getByText(unitProblem.stem)).toBeVisible();
   await expect(panel.getByText("1 / 5")).toBeVisible();
 
-  await tab(page, "에이전트").click();
+  await tab(page, "AI 에이전트").click();
   await page.getByRole("tabpanel", { name: "에이전트" }).getByRole("button", { name: "관련 문제 풀어보기" }).click();
 
   await expect(tab(page, "퀴즈")).toHaveAttribute("aria-selected", "true");
