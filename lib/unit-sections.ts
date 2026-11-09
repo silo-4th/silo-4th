@@ -34,6 +34,16 @@ export function sectionConceptId(unitId: string, { title }: UnitSection): string
   return number === undefined ? null : `${unitId}-${number}`;
 }
 
+export type SectionAddress = { unitId: string; key: string };
+// 절 없이 단원만 있으면 단원 맨 위로 간다.
+export type StudyTarget = { unitId: string; key?: string };
+
+// 개념 소제목을 단원 본문에서 찾지 못하면 갈 절이 없다.
+export function conceptSection(unitId: string, content: string, conceptId: string): SectionAddress | undefined {
+  const section = unitSections(content).find((candidate) => sectionConceptId(unitId, candidate) === conceptId);
+  return section && { unitId, key: section.key };
+}
+
 export function remarkSectionIds() {
   return (tree: Root) => {
     for (const { heading, section } of labelSections(tree)) {

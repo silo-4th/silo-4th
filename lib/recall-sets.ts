@@ -3,17 +3,26 @@ import { captureException } from "@sentry/nextjs";
 import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
-import { concept, quizProblem, type RECALL_REASONS, recallItem, recallSet } from "@/lib/db/schema";
+import { concept, quizProblem, type RECALL_REASONS, recallItem, recallSet, sectionView, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { type ProblemView, problemViewColumns, toProblemView } from "@/lib/quiz-problems";
 import { studyDay } from "@/lib/study-day";
+import { conceptSection, type SectionAddress, type StudyTarget } from "@/lib/unit-sections";
 
 export const RECALL_EVENTS = ["postpone", "start", "complete"] as const;
 export type RecallEvent = (typeof RECALL_EVENTS)[number];
 
 export type RecallSetView = {
   id: string;
-  items: { id: string; position: number; reason: (typeof RECALL_REASONS)[number]; problem: ProblemView }[];
+  items: {
+    id: string;
+    position: number;
+    reason: (typeof RECALL_REASONS)[number];
+    problem: ProblemView;
+    section?: SectionAddress;
+  }[];
+  // 결과 화면에서 오늘 공부를 이어 갈 곳이다. 가장 최근에 처음 본 절이고, 그 소제목이 본문에 없으면 그 단원, 본 절이 없으면 첫 단원이다.
+  studyFrom?: StudyTarget;
 };
 
 export type Recorded = "recorded" | "unknown" | "not-yours";
@@ -60,13 +69,41 @@ export async function showTodaySet(learnerId: string, today: string): Promise<Re
     if (!shown) return null;
 
     const items = await tx
-      .select({ id: recallItem.id, position: recallItem.position, reason: recallItem.reason, problem: problemViewColumns })
+      .select({
+        id: recallItem.id,
+        position: recallItem.position,
+        reason: recallItem.reason,
+        problem: problemViewColumns,
+        unitId: concept.unitId,
+        content: unit.content,
+      })
       .from(recallItem)
       .innerJoin(quizProblem, eq(quizProblem.id, recallItem.problemId))
       .innerJoin(concept, eq(concept.id, quizProblem.conceptId))
+      .innerJoin(unit, eq(unit.id, concept.unitId))
       .where(eq(recallItem.setId, shown.id))
       .orderBy(asc(recallItem.position));
-    return { id: shown.id, items: items.map((item) => ({ ...item, problem: toProblemView(item.problem) })) };
+    const [lastSeen] = await tx
+      .select({ conceptId: sectionView.conceptId, unitId: concept.unitId, content: unit.content })
+      .from(sectionView)
+      .innerJoin(concept, eq(concept.id, sectionView.conceptId))
+      .innerJoin(unit, eq(unit.id, concept.unitId))
+      .where(eq(sectionView.learnerId, learnerId))
+      .orderBy(desc(sectionView.firstSeenAt))
+      .limit(1);
+    const [firstUnit] = await tx.select({ id: unit.id }).from(unit).orderBy(asc(unit.id)).limit(1);
+    const studyFrom: StudyTarget | undefined =
+      (lastSeen && conceptSection(lastSeen.unitId, lastSeen.content, lastSeen.conceptId)) ??
+      (lastSeen && { unitId: lastSeen.unitId }) ??
+      (firstUnit && { unitId: firstUnit.id });
+    return {
+      id: shown.id,
+      items: items.map(({ unitId, content, ...item }) => {
+        const section = conceptSection(unitId, content, item.problem.conceptId);
+        return { ...item, problem: toProblemView(item.problem), ...(section && { section }) };
+      }),
+      ...(studyFrom && { studyFrom }),
+    };
   });
 }
 
