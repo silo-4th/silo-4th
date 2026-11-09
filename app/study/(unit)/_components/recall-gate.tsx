@@ -144,7 +144,7 @@ function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => v
         시작하기
       </button>
       <button type="button" onClick={onLater} className="mt-3 self-center text-sm font-medium text-gray hover:text-ink-2">
-        내일 꺼내 먹을래요
+        오늘은 건너뛸게요
       </button>
     </>
   );

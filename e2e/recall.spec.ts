@@ -122,7 +122,7 @@ test("TC-202 어제 학습한 학습자가 오늘 처음 학습 화면에 들어
   await expect(screen.getByText("넘어감", { exact: true })).toHaveCount(2);
   await expect(screen.getByText("물어봄", { exact: true })).toHaveCount(1);
   await expect(screen.getByRole("button", { name: "시작하기" })).toBeVisible();
-  await expect(screen.getByRole("button", { name: "내일 꺼내 먹을래요" })).toBeVisible();
+  await expect(screen.getByRole("button", { name: "오늘은 건너뛸게요" })).toBeVisible();
   expect((await setTimes(seeded.setId))?.shownAt).not.toBeNull();
 });
 
@@ -189,12 +189,12 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   expect(times?.postponedAt).toBeNull();
 });
 
-test("TC-205 내일 꺼내 먹을래요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
+test("TC-205 오늘은 건너뛸게요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
   const { setId, unit } = await seedSet(learnerId, [{ format: "mcq", reason: "read_no_question" }]);
 
   await page.goto(`/study/${unit.id}`);
   const screen = recallScreen(page);
-  await screen.getByRole("button", { name: "내일 꺼내 먹을래요" }).click();
+  await screen.getByRole("button", { name: "오늘은 건너뛸게요" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: unit.title, exact: true })).toBeVisible();
   await expect(screen).toHaveCount(0);
