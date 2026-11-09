@@ -34,6 +34,13 @@ export type QuizTabEvent =
   | { type: "retry" }
   | { type: "next"; unitId: string };
 
+// 디자인 시안처럼 다섯 문제를 한 묶음으로 센다. 다섯 문제를 넘겨도 카운트는 계속 늘고, 게이지는 가득 찬 채로 둔다.
+export const SET_SIZE = 5;
+
+export function gaugeFilled(number: number, graded: boolean): number {
+  return Math.min(SET_SIZE, number - 1 + (graded ? 1 : 0));
+}
+
 export function startQuizTab(): QuizTab {
   return { stage: "idle" };
 }

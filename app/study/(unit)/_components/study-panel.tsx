@@ -2,17 +2,19 @@
 
 import { X } from "lucide-react";
 import { useParams } from "next/navigation";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
 import {
+  SET_SIZE,
   type ProblemResult,
   type QuizTab,
   type QuizTabEvent,
   advanceQuizTab,
   fetchProblem,
   fetchResumedProblem,
+  gaugeFilled,
   readSavedProblem,
   saveProblem,
   settleProblem,
@@ -27,9 +29,6 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
-
-// 디자인 시안처럼 다섯 문제를 한 묶음으로 센다.
-const SET_SIZE = 5;
 
 // 상태가 바뀔 때만 요청하고 기억한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
 // 이어 풀기 응답이 다시 새 문제 요청으로 이어지므로, 응답을 반영할 때도 지금 상태를 ref로 읽어 바로 다음 요청을 보낸다.
@@ -145,11 +144,13 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
         <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
           <QuestionPanel onSolveRelated={solveRelated} />
         </div>
-        <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="min-h-0 flex-1 overflow-y-auto p-5">
-          {/* 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다. */}
-          <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
+        <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="flex min-h-0 flex-1 flex-col">
           <QuizTabBody
             tab={quiz}
+            guide={
+              // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
+              <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
+            }
             onRetry={() => sendQuiz({ type: "retry" })}
             onNext={() => sendQuiz({ type: "next", unitId })}
           />
@@ -159,33 +160,67 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   );
 }
 
-function QuizTabBody({ tab, onRetry, onNext }: { tab: QuizTab; onRetry: () => void; onNext: () => void }) {
+function QuizTabBody({ tab, guide, onRetry, onNext }: { tab: QuizTab; guide: ReactNode; onRetry: () => void; onNext: () => void }) {
+  // 채점을 받은 탭 상태다. 기본 문제는 같은 ID로 다시 나올 수 있어, ID 대신 문제를 띄울 때마다 새로 생기는 상태로 비교한다.
+  const [gradedTab, setGradedTab] = useState<QuizTab>();
+  const graded = gradedTab === tab;
+  const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
   return (
-    <>
+    // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
+      {guide}
+      {waiting && (
+        <div className="flex justify-center pt-8">
+          <Mascot size={88} spin={tab.stage !== "failed"} />
+        </div>
+      )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
-      <p role="status" className={tab.stage === "problem" || tab.stage === "idle" ? "sr-only" : "text-sm text-gray"}>
-        {tab.stage === "loading" && (
-          <span className="flex items-center gap-2.5">
-            <span aria-hidden className="size-4 animate-spin rounded-full border-2 border-line border-t-green-600 motion-reduce:animate-none" />
-            문제를 만들고 있어요
-          </span>
-        )}
+      <p role="status" className={waiting ? "text-center text-sm text-gray" : "sr-only"}>
+        {tab.stage === "loading" && "문제를 만들고 있어요"}
         {tab.stage === "resuming" && "풀던 문제를 불러오고 있어요"}
         {tab.stage === "failed" && <span className="font-bold text-red">문제를 만들지 못했어요</span>}
       </p>
       {tab.stage === "failed" && (
-        <button type="button" onClick={onRetry} className="mt-3 h-9 rounded-md border border-line bg-white px-3.5 text-sm font-semibold hover:bg-bg">
-          다시 시도
-        </button>
+        <div className="mt-4 flex justify-center">
+          <button type="button" onClick={onRetry} className="btn btn-sm">
+            다시 시도
+          </button>
+        </div>
       )}
       {tab.stage === "problem" && (
         <>
-          <p className="mb-3 text-xs font-semibold text-gray">
-            {tab.number} / {SET_SIZE}
-          </p>
-          <QuizCard key={tab.problem.id} problem={tab.problem} onNext={onNext} />
+          <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, graded)} />
+          <QuizCard key={tab.problem.id} problem={tab.problem} onGraded={() => setGradedTab(tab)} onNext={onNext} pinNext />
         </>
       )}
-    </>
+    </div>
+  );
+}
+
+// 칸 사이 3px 틈까지 더해 마스코트를 마지막으로 채운 칸의 끝에 세운다.
+function QuizGauge({ number, filled }: { number: number; filled: number }) {
+  const runner = filled ? `translateX(calc(${filled / SET_SIZE} * (100% + 3px) - 3px))` : "none";
+  return (
+    <div className="quiz-gauge">
+      <div
+        role="progressbar"
+        aria-label="문제 진행"
+        aria-valuemin={0}
+        aria-valuemax={SET_SIZE}
+        aria-valuenow={filled}
+        aria-valuetext={`${SET_SIZE}문제 중 ${filled}문제 풀었어요`}
+        className="quiz-strip"
+      >
+        {Array.from({ length: SET_SIZE }, (_, index) => (
+          <i key={index} className={index < filled ? "on" : undefined} />
+        ))}
+      </div>
+      <span className="quiz-runner" style={{ transform: runner }}>
+        <Mascot size={22} />
+      </span>
+      <p className="sr-only">
+        문제 {number} / {SET_SIZE}
+      </p>
+    </div>
   );
 }

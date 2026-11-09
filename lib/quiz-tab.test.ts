@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProblemView } from "./quiz-problems";
-import { type QuizTab, type QuizTabEvent, advanceQuizTab, settleProblem, startQuizTab } from "./quiz-tab";
+import { type QuizTab, type QuizTabEvent, advanceQuizTab, gaugeFilled, settleProblem, startQuizTab } from "./quiz-tab";
 
 const unitA = "unit-a";
 const unitB = "unit-b";
@@ -77,5 +77,11 @@ describe("이어 풀기", () => {
     expect(resuming).toMatchObject({ stage: "resuming", number: 3, problemId: problem.id });
 
     expect(run(resuming, { type: "failed" })).toEqual({ stage: "loading", number: 3, unitId: unitA });
+  });
+
+  it("TC-217 진행 게이지는 지금 문제 번호와 채점 여부로 채운 칸 수를 정하고 다섯 칸을 넘지 않아요", () => {
+    expect(gaugeFilled(1, false)).toBe(0);
+    expect(gaugeFilled(3, true)).toBe(3);
+    expect(gaugeFilled(7, false)).toBe(5);
   });
 });

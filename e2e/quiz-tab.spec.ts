@@ -384,3 +384,32 @@ test("TC-213 다시 낸 기본 문제는 문제를 내준 시각 뒤의 풀이�
   expect(await solvedWhenShownAt(new Date(answeredAt.getTime() - 60_000))).toBe(true);
   expect(await solvedWhenShownAt(new Date(answeredAt.getTime() + 60_000))).toBe(false);
 });
+
+test("TC-218 퀴즈 탭에서 답을 채점받으면 진행 게이지가 한 칸 차고, 패널 아래에 고정된 다음 문제 버튼이 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const view = await storeProblem(learnerId, await firstConcept(first.id), "GROUP BY로 묶은 뒤 그룹 조건은 어디에 쓰나요?");
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: view }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  const card = panel.getByRole("region", { name: "퀴즈" });
+  await expect(card.getByText(view.stem)).toBeVisible();
+  const gauge = panel.getByRole("progressbar", { name: "문제 진행" });
+  await expect(gauge).toHaveAttribute("aria-valuemax", "5");
+  await expect(gauge).toHaveAttribute("aria-valuenow", "0");
+  await expect(panel.getByText("1 / 5")).toBeVisible();
+
+  await card.getByText("HAVING", { exact: true }).click();
+  await card.getByRole("button", { name: "확실해요" }).click();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+  await expect(gauge).toHaveAttribute("aria-valuenow", "1");
+
+  const next = panel.getByRole("button", { name: "다음 문제" });
+  await expect(next).toBeVisible();
+  const nextBox = await next.boundingBox();
+  const panelBox = await page.getByRole("complementary", { name: "학습 패널" }).boundingBox();
+  if (!nextBox || !panelBox) throw new Error("버튼과 패널이 화면에 있어야 한다.");
+  expect(panelBox.y + panelBox.height - (nextBox.y + nextBox.height)).toBeLessThan(nextBox.height);
+});
