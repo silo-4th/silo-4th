@@ -7,7 +7,7 @@
 ## 근거
 
 - 원천 자료: Linear [4-61 질문을 개념으로 분류하고 요약 남기기](https://linear.app/silo0/issue/4-61) "할 일", "완료 기준", Linear 문서 [05-1 기록 구조 테이블 설계](https://linear.app/silo0/document/05-1-기록-구조-테이블-설계-0c3075a457c4) "질문 하나가 저장되는 흐름" 2, 3, 5번과 "아직 정하지 않은 것" 3, 5번
-- 확인 날짜: 2026-11-04, 2026-11-05에 대화 세션과 개념 데이터 반영
+- 확인 날짜: 2026-11-04, 2026-11-05에 대화 세션과 개념 데이터 반영, 2026-11-09에 Linear [4-102](https://linear.app/silo0/issue/4-102)의 답변, 요약 지시문과 과거 요약 날짜 반영
 - 자료 성격: Linear 이슈와 문서, `4-61` 브랜치 코드 `lib/questions.ts`, `lib/llm/answer.ts`, `lib/db/schema.ts`, `app/api/questions/route.integration.test.ts`
 - 결정한 사람: 개발자. 결정의 근거와 대안은 [ADR 0008](adr/0008-question-concept-summary.md)에 있다
 - 관련 문서: [ADR 0007](adr/0007-ai-model.md), [질문 서버와 질문 창](../output/2026-11-03-question-server.md), [노션 Test-case DB](https://app.notion.com/p/40ce7e8fdd1280268097ef263f610f7a) TC-61~70, TC-86, TC-180. TC-61은 폐기했다
@@ -166,11 +166,22 @@ erDiagram
 과거 요약은 시스템 프롬프트에서 단원 본문 다음, 캐시 지점 뒤에 둔다. 단원 본문은 지금처럼 캐시되고, 질문마다 달라지는 과거 요약만 캐시 밖에 있다. 과거 요약이 없으면 이 블록을 넣지 않는다.
 
 ```text
-[시스템 1] 학습자가 아래 단원을 읽다가 질문했다. 단원 내용을 바탕으로 한국어로 답한다.
+[시스템 1] 답변 지시문 v6-principles
 [시스템 2] <unit>단원 본문</unit>                    ← 캐시 지점
 [시스템 3] <past_questions>이 학습자가 다른 대화에서 물었던 질문의 요약 최대 5개</past_questions>
 [앞 대화] 같은 대화에서 답을 받은 질문과 답 원문
 [사용자]   질문 원문
+```
+
+답변 지시문은 2026-11-09에 PO가 확정한 `v6-principles`다. 전문은 `lib/llm/answer.ts`의 `ANSWER_SYSTEM`에 있고, 근거는 Linear [4-102](https://linear.app/silo0/issue/4-102) 코멘트에 있다.
+
+과거 요약 줄 앞에는 물어본 날짜를 한국 시간 달력 날짜로 붙인다. 답변 AI가 "이 개념, 11/5에도 물어보셨어요."처럼 알리게 하려는 것이다. TC-242
+
+```text
+<past_questions>
+- 11/5 · 과거 요약 A
+- 11/6 · 과거 요약 B
+</past_questions>
 ```
 
 요약 하나를 300자 이내로 만들므로, 5개를 넣어도 1,500자 정도다.
@@ -182,7 +193,8 @@ erDiagram
 | 모델 | Claude Haiku 5.5, `env.ANTHROPIC_UTILITY_MODEL` |
 | 시점 | 답을 저장하고 `done`을 보낸 뒤 Next.js `after`로 실행한다. 학습자는 요약을 기다리지 않는다. TC-62 |
 | 입력 | `messages`의 질문 원문과 답 원문 |
-| 출력 | 무엇을 헷갈려 물었고 답의 핵심이 무엇이었는지를 2~3문장, 300자 이내로 쓴 요약과 키워드 목록 |
+| 출력 | 무엇을 물었고 답의 결론이 무엇이었는지를 2~3문장, 300자 이내로 쓴 요약과 키워드 목록. 헷갈린 점은 질문에 드러날 때만 쓰고, 결론은 주제 이름이 아니라 규칙이나 값으로 쓴다 |
+| 지시문 | 2026-11-09에 PO가 확정한 `r2b-nofab-kw0-folded`. 전문은 `lib/llm/tagging.ts`의 `SUMMARY_SYSTEM`에 있고, 근거는 Linear 문서 [AI 프롬프트 검증 결과와 남은 결정 (11/9)](https://linear.app/silo0/document/ai-프롬프트-검증-결과와-남은-결정-119-0005b0dc233d)에 있다 |
 | 실패 | Sentry에 남기고 요약 칸을 비워 둔다. 질문은 `ok` 그대로다. TC-65 |
 | 제한 시간 | 30초. `제안` |
 
