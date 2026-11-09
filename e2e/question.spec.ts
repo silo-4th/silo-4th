@@ -65,6 +65,7 @@ test("TC-51 실패한 질문을 다시 보내면 같은 질문으로 이어져 �
 
   await expect(page.getByText(FAILED)).toBeVisible();
 
+  await page.getByRole("button", { name: "강의 목록" }).click();
   await page.getByRole("link", { name: second.title, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: second.title, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "다시 시도" }).click();
@@ -321,6 +322,7 @@ test("TC-80 학습셋을 바꿔도 지금 대화가 그대로 남아요", async 
   await expect(conversation).toHaveText(["남아 있을 질문", "남아 있을 답"]);
   await expect(sessions).toHaveCount(1);
 
+  await page.getByRole("button", { name: "강의 목록" }).click();
   await page.getByRole("link", { name: second.title, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: second.title, exact: true })).toBeVisible();
 

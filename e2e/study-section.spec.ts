@@ -17,6 +17,7 @@ test("TC-71 절 주소로 들어오면 그 학습셋이 열리고 그 절이 화
   await page.goto(`/study/${unit.id}#${section.key}`);
 
   await expect(page.getByRole("heading", { level: 1, name: unit.title, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "강의 목록" }).click();
   await expect(
     page.getByRole("navigation", { name: "단원" }).getByRole("link", { name: unit.title, exact: true }),
   ).toHaveAttribute("aria-current", "page");
