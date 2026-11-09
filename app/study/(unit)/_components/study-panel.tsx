@@ -190,7 +190,7 @@ function QuizTabBody({ tab, guide, onRetry, onNext }: { tab: QuizTab; guide: Rea
       {tab.stage === "problem" && (
         <>
           <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, graded)} />
-          <QuizCard key={tab.problem.id} problem={tab.problem} onGraded={() => setGradedTab(tab)} onNext={onNext} />
+          <QuizCard key={tab.problem.id} problem={tab.problem} onGraded={() => setGradedTab(tab)} onNext={onNext} pinNext />
         </>
       )}
     </div>

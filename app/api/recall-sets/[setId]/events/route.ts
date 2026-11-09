@@ -3,6 +3,9 @@ import { env } from "@/lib/env";
 import { type EventOutcome, isRecallEvent, recordSetEvent, reportRecallError } from "@/lib/recall-sets";
 import { isUuid } from "@/lib/uuid";
 
+// 화면은 기록 요청을 15초에서 끊고 다시 보낸다. 서버가 그 전에 끝나야 끊긴 시작 기록이 뒤 기록보다 늦게 저장되지 않는다.
+export const maxDuration = 10;
+
 const STATUS: Record<EventOutcome, number> = {
   recorded: 204,
   unknown: 404,

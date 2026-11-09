@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AttemptInput } from "@/lib/quiz-attempts";
+import type { AttemptInput, AttemptResult } from "@/lib/quiz-attempts";
 import { resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
 import {
   MAX_ANSWER_LENGTH,
@@ -56,18 +56,35 @@ function focusOnMount(element: HTMLElement | null) {
   if (stayed) element.focus();
 }
 
+// 다음으로 넘어갈 때 부르는 쪽에 낸 답을 넘긴다. 채점을 받지 못한 채 넘어가면 result가 없다.
+export type Solved = { submitted: AttemptInput; result?: AttemptResult };
+
+type QuizCardProps = {
+  problem: ProblemView;
+  onNext: (solved: Solved) => void;
+  // 꺼내 먹기 문항을 풀 때만 넘긴다. 풀이를 그 문항의 풀이로 저장한다.
+  recallItemId?: string;
+  onSkip?: () => void;
+  // 꺼내 먹기의 마지막 문항처럼 다음 버튼이 다음 문제로 가지 않을 때 넘긴다.
+  nextLabel?: string;
+  // 퀴즈 탭이 진행 게이지를 채우려고 넘긴다.
+  onGraded?: () => void;
+  // 퀴즈 탭처럼 p-5 스크롤 영역 안에 둘 때, 다음 버튼을 그 영역 아래에 붙인다.
+  pinNext?: boolean;
+};
+
 // 퀴즈 탭과 꺼내 먹기가 함께 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
-export function QuizCard({ problem, onGraded, onNext }: { problem: ProblemView; onGraded: () => void; onNext: () => void }) {
+export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onGraded, pinNext = false }: QuizCardProps) {
   const [flow, setFlow] = useState<QuizFlow>(() => startQuizFlow(problem));
   const dispatch = (...events: QuizFlowEvent[]) => setFlow((current) => events.reduce(advanceQuizFlow, current));
 
   // 부르는 쪽이 매번 새 함수를 넘겨도 채점 요청을 다시 보내지 않게 효과의 의존성에서 뺀다.
-  const graded = useEffectEvent(onGraded);
+  const graded = useEffectEvent(() => onGraded?.());
   const grading = flow.stage === "grading" ? flow : undefined;
   useEffect(() => {
     if (!grading) return;
     let active = true;
-    void sendAttempt(grading.request).then((result) => {
+    void sendAttempt(recallItemId ? { ...grading.request, recallItemId } : grading.request).then((result) => {
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
       if (result) graded();
@@ -75,11 +92,13 @@ export function QuizCard({ problem, onGraded, onNext }: { problem: ProblemView; 
     return () => {
       active = false;
     };
-  }, [grading]);
+  }, [grading, recallItemId]);
 
   function next() {
+    if (flow.stage === "explanation") onNext({ submitted: flow.submitted, result: flow.result });
+    else if (flow.stage === "grading-failed") onNext({ submitted: flow.request });
+    else return;
     dispatch({ type: "next" });
-    onNext();
   }
 
   return (
@@ -107,6 +126,11 @@ export function QuizCard({ problem, onGraded, onNext }: { problem: ProblemView; 
         </p>
       )}
       {flow.stage === "problem" && <Answering problem={problem} flow={flow} dispatch={dispatch} />}
+      {flow.stage === "problem" && onSkip && (
+        <button type="button" onClick={onSkip} className="mt-4 self-center text-[13px] font-medium text-gray hover:text-ink-2">
+          이 문제 건너뛰기
+        </button>
+      )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
       <p role="status" className={STATUS_CLASS[flow.stage] ?? "sr-only"}>
         {statusOf(flow)}
@@ -117,12 +141,19 @@ export function QuizCard({ problem, onGraded, onNext }: { problem: ProblemView; 
             다시 시도
           </button>
           <button type="button" onClick={next} className={BUTTON}>
-            다음 문제로
+            {nextLabel ?? "다음 문제로"}
           </button>
         </div>
       )}
       {flow.stage === "explanation" && (
-        <Explanation format={problem.format} {...resultView(flow.submitted, flow.result)} explanation={flow.result.explanation} onNext={next} />
+        <Explanation
+          format={problem.format}
+          {...resultView(flow.submitted, flow.result)}
+          explanation={flow.result.explanation}
+          nextLabel={nextLabel ?? "다음 문제"}
+          pinNext={pinNext}
+          onNext={next}
+        />
       )}
     </section>
   );
@@ -229,8 +260,16 @@ function Explanation({
   correctAnswers,
   myAnswer,
   explanation,
+  nextLabel,
+  pinNext,
   onNext,
-}: ReturnType<typeof resultView> & { format: ProblemView["format"]; explanation: string; onNext: () => void }) {
+}: ReturnType<typeof resultView> & {
+  format: ProblemView["format"];
+  explanation: string;
+  nextLabel: string;
+  pinNext: boolean;
+  onNext: () => void;
+}) {
   const right = verdict === "맞았어요";
   return (
     <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="flex flex-1 flex-col rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-600">
@@ -258,9 +297,9 @@ function Explanation({
         </div>
       </div>
       {/* 해설이 짧으면 카드 아래로 밀고, 길면 스크롤 영역 아래에 붙여 버튼이 늘 패널 아래에 있다. */}
-      <div className="sticky -bottom-5 mt-auto -mb-5 bg-white pt-3 pb-5">
+      <div className={pinNext ? "sticky -bottom-5 mt-auto -mb-5 bg-white pt-3 pb-5" : "mt-6"}>
         <button type="button" onClick={onNext} className="btn btn-block btn-dark h-11 text-[15px]">
-          다음 문제
+          {nextLabel}
         </button>
       </div>
     </div>

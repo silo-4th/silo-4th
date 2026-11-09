@@ -1,15 +1,18 @@
 import { Suspense } from "react";
 import { requireLearner } from "@/lib/auth";
+import { RecallGate } from "./_components/recall-gate";
 import { StudyPanel } from "./_components/study-panel";
 
 export default function UnitLayout({ children }: LayoutProps<"/study">) {
   return (
-    <div className="relative flex h-screen">
-      <div className="flex min-w-0 flex-1">{children}</div>
-      <Suspense>
-        <LearnerStudyPanel />
-      </Suspense>
-    </div>
+    <RecallGate>
+      <div className="relative flex h-screen">
+        <div className="flex min-w-0 flex-1">{children}</div>
+        <Suspense>
+          <LearnerStudyPanel />
+        </Suspense>
+      </div>
+    </RecallGate>
   );
 }
 
