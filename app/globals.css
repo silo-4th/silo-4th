@@ -725,3 +725,44 @@
 @keyframes grubby-sway { 0%, 100% { transform: rotate(-2.5deg) translateY(0); } 50% { transform: rotate(2.5deg) translateY(-2px); } }
 @keyframes grubby-blink { 0%, 46%, 49.5%, 100% { transform: scaleY(0); } 47.6% { transform: scaleY(1.04); } }
 @keyframes grubby-lash { 0%, 46.8%, 48.6%, 100% { opacity: 0; } 47.4%, 48% { opacity: 1; } }
+
+/* 로그인 화면 왼쪽 그림. 시안 styles.css의 login-art를 옮겼다.
+   넓은 화면에서는 글, 말풍선, 플럭키가 영역 크기에 맞춰 같은 배율로 커지고 줄어든다. 기준은 1440x900 화면에서의 영역 너비 672px이고, 시안의 1px이 var(--s)다. */
+@layer components {
+  .login-art { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; min-height: 440px; margin: --spacing(4); padding: --spacing(8) --spacing(6) 0; border-radius: 20px; background: #fff7df; }
+  .login-stage, .login-copy { display: contents; }
+  .login-art-head { align-self: flex-start; margin-left: 2%; font-size: 23px; font-weight: 700; line-height: 1.4; letter-spacing: -0.02em; }
+  .login-bubbles { position: relative; z-index: 1; align-self: flex-start; display: flex; flex-direction: column; align-items: flex-start; gap: --spacing(2.5); margin: --spacing(8) 0 0 2%; }
+  .login-bubble { position: relative; padding: 10px 16px; border-radius: 18px; background: #fff; font-size: 14.5px; font-weight: 600; box-shadow: 0 4px 12px rgba(140, 105, 20, 0.09); }
+  .login-bubble--icon { display: flex; align-items: flex-start; gap: 8px; }
+  .login-checkbox { flex: none; display: grid; place-items: center; width: 17px; height: 17px; margin-top: 2.5px; border-radius: 5px; background: var(--color-green); color: #fff; }
+  .login-emoji { font-size: 1.35em; line-height: 0; vertical-align: -0.12em; margin-left: 3px; }
+  .login-drag { text-decoration: none; padding: 0 3px; margin: 0 -1px; border-radius: 2px; background: linear-gradient(180deg, transparent 64%, rgba(47, 194, 135, 0.38) 64%, rgba(47, 194, 135, 0.38) 92%, transparent 92%); }
+  /* 마지막 말풍선에만 플럭키 쪽으로 말린 꼬리를 단다. ::after가 영역 배경색으로 꼬리 안쪽 곡선을 깎는다. */
+  .login-bubble:last-child { border-bottom-right-radius: calc(6 * var(--s, 1px)); }
+  .login-bubble:last-child::before, .login-bubble:last-child::after { content: ""; position: absolute; bottom: 0; height: calc(17 * var(--s, 1px)); }
+  .login-bubble:last-child::before { right: calc(-7 * var(--s, 1px)); width: calc(22 * var(--s, 1px)); background: #fff; border-bottom-left-radius: calc(16 * var(--s, 1px)) calc(14 * var(--s, 1px)); }
+  .login-bubble:last-child::after { right: calc(-20 * var(--s, 1px)); width: calc(20 * var(--s, 1px)); background: #fff7df; border-bottom-left-radius: calc(11 * var(--s, 1px)); }
+  .login-plucky { position: absolute; left: 50%; bottom: -6%; width: min(55%, 299px); transform: translateX(-20%); pointer-events: none; user-select: none; }
+
+  @media (min-width: 861px) {
+    .login-art { container-type: size; min-height: 0; margin: --spacing(6); padding: 0; }
+    .login-stage {
+      /* 영역 너비에 맞춰 커지고, 높이는 600px보다 낮아질 때만 줄인다. 플럭키는 너비와 높이를 함께 따른다. */
+      --s: min(calc(100cqw / 672), calc(100cqh / 600));
+      --si: max(var(--s), min(calc(100cqh / 791), calc(100cqw / 560)));
+      display: block; position: absolute; inset: 0;
+    }
+    /* 시안 값을 그대로 쓴다. 145.1px은 별명 칸이 있는 시안 오른쪽 열 높이의 절반이라, 별명 칸이 없는 이 화면에서는 첫 줄이 오른쪽 제목보다 조금 위에 놓인다.
+       플럭키가 커지면 마지막 말풍선이 헤드셋에 닿지 않게 위로 올라간다. */
+    .login-copy { display: block; position: absolute; left: calc(52 * var(--s)); top: min(calc(50% - 145.1px), calc(100% - 214.3 * var(--si) - 280 * var(--s) - 16px)); }
+    .login-art-head { margin: 0; font-size: calc(28 * var(--s)); }
+    .login-bubbles { margin: calc(32 * var(--s)) 0 0; gap: calc(10 * var(--s)); }
+    .login-bubble { padding: calc(13 * var(--s)) calc(20 * var(--s)); border-radius: calc(18 * var(--s)); font-size: calc(16 * var(--s)); box-shadow: 0 calc(4 * var(--s)) calc(12 * var(--s)) rgba(140, 105, 20, 0.09); }
+    .login-bubble--icon { gap: calc(8 * var(--s)); }
+    .login-checkbox { width: calc(17 * var(--s)); height: calc(17 * var(--s)); margin-top: calc(2.5 * var(--s)); border-radius: calc(5 * var(--s)); }
+    .login-checkbox svg { width: calc(12 * var(--s)); height: calc(12 * var(--s)); }
+    .login-emoji { margin-left: calc(3 * var(--s)); }
+    .login-plucky { left: auto; right: calc(-17.3 * var(--si)); bottom: calc(-50.9 * var(--si)); width: calc(408 * var(--si)); max-width: none; transform: none; }
+  }
+}
