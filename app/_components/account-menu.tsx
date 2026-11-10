@@ -14,6 +14,8 @@ export function AccountMenu({ name, light = false }: { name: string; light?: boo
 
   useEffect(() => {
     if (!open) return;
+    // 말투 메뉴처럼 열자마자 메뉴 항목으로 포커스를 옮겨 키보드로 바로 고를 수 있게 한다.
+    boxRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     const onPointerDown = (event: PointerEvent) => {
       if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
     };
