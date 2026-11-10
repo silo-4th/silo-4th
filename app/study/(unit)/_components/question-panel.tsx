@@ -17,7 +17,9 @@ import {
   subscribeAnswerTone,
 } from "@/lib/answer-tone";
 import type { SessionSummary, SessionTurn } from "@/lib/question-sessions";
+import { BetaNotice } from "./beta-notice";
 import { HistoryMenu } from "./history-menu";
+import { QuickIcon, type QuickIconKind } from "./quick-icon";
 import { ToneMenu } from "./tone-menu";
 
 const SLOW_MS = 5_000;
@@ -29,6 +31,14 @@ const FAIL_MESSAGES = {
   failed: "답을 가져오지 못했어요. 다시 보내 주세요.",
   cut: "응답이 끊겼어요",
 };
+
+// 비교는 아직 베타라 질문을 보내지 않고 안내만 띄운다.
+const QUICK_QUESTIONS: { title: string; desc: string; icon: QuickIconKind; beta?: true }[] = [
+  { title: "이 페이지 핵심만 알려줘", desc: "지금 구간을 3줄로", icon: "summary" },
+  { title: "예시로 설명해줘", desc: "SQL 예제와 실행 결과로", icon: "example" },
+  { title: "내가 이해했는지 확인해줘", desc: "내 말로 답해 보기", icon: "check" },
+  { title: "헷갈리는 개념 비교해줘", desc: "WHERE와 HAVING처럼", icon: "compare", beta: true },
+];
 
 type Question = { id: string; sessionId: string; unitId: string; content: string };
 
@@ -81,6 +91,7 @@ export function QuestionPanel({
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [openedSession, setOpenedSession] = useState<string>();
   const [historyOpened, setHistoryOpened] = useState(false);
+  const [betaOpened, setBetaOpened] = useState(false);
   // 서버에서 그릴 때는 저장소가 없어 기본 말투로 그리고, 브라우저에서 저장된 말투로 바꾼다.
   const tone = useSyncExternalStore(subscribeAnswerTone, () => readAnswerTone(learnerId), () => DEFAULT_TONE);
   // 같은 문구를 다시 띄워도 사라지는 타이머가 새로 시작되게 안내마다 새 객체로 둔다.
@@ -188,7 +199,10 @@ export function QuestionPanel({
   }
 
   function send(formData: FormData) {
-    const content = String(formData.get("question") ?? "").trim();
+    sendQuestion(String(formData.get("question") ?? "").trim());
+  }
+
+  function sendQuestion(content: string) {
     if (!content || !openedSession) return;
     void ask({ id: crypto.randomUUID(), sessionId: openedSession, unitId, content });
     // 마지막으로 질문한 세션을 맨 위로 올린다. 처음 질문한 세션은 이 질문이 제목이 된다.
@@ -250,6 +264,22 @@ export function QuestionPanel({
                 <Mascot size={112} live />
                 <p className="welcome-hi">반가워요! 저와 함께 쉽게 공부해요!</p>
                 <h3 className="welcome-title">오늘은 무엇부터 해볼까요?</h3>
+                <div className="quick-grid">
+                  {QUICK_QUESTIONS.map(({ title, desc, icon, beta }) => (
+                    <button
+                      key={title}
+                      type="button"
+                      onClick={() => (beta ? setBetaOpened(true) : sendQuestion(title))}
+                      className="quick-card"
+                    >
+                      <span className="quick-ico">
+                        <QuickIcon kind={icon} />
+                      </span>
+                      <span className="quick-title">{title}</span>
+                      <span className="quick-desc">{desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <ol aria-label="대화" className="chat-list">
@@ -329,6 +359,11 @@ export function QuestionPanel({
       </div>
       {/* 낭독기는 이미 있던 알림 영역에 들어온 글만 읽으므로 영역은 늘 두고 안내만 넣었다 뺀다. */}
       <div aria-live="polite">{notice && <p className="toast">{notice.text}</p>}</div>
+      <BetaNotice open={betaOpened} onClose={() => setBetaOpened(false)}>
+        헷갈리는 개념 비교는 아직 준비하고 있어요.
+        <br />
+        조금만 기다려 주세요.
+      </BetaNotice>
       {historyOpened && (
         <HistoryMenu
           sessions={sessions}
