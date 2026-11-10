@@ -4,6 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { requireLearner } from "@/lib/auth";
 import { remarkSectionIds, sectionConceptId, unitSections } from "@/lib/unit-sections";
+import { SUBJECT_NAME } from "@/lib/subject";
 import { findUnit, listUnits } from "@/lib/units";
 import { AccountMenu } from "../_components/account-menu";
 import { ScrollToSection } from "../_components/scroll-to-section";
@@ -41,6 +42,7 @@ async function StudyUnit({ params }: { params: Params }) {
       </header>
       <UnitPending>
         <UnitBody sections={sections}>
+          <span className="chip mb-4 h-[26px] rounded-md px-2.5 text-[13px]">{SUBJECT_NAME}</span>
           <Markdown remarkPlugins={[remarkGfm, remarkSectionIds]}>{current.content}</Markdown>
           <ScrollToSection />
         </UnitBody>
