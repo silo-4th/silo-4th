@@ -89,6 +89,7 @@ test("TC-226 마지막 문항에서 결과 보기를 누르면 꺼내 먹기 막
   const card = screen.getByRole("region", { name: "퀴즈" });
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await card.getByRole("button", { name: "다음 문제" }).click();
   await screen.getByRole("button", { name: "이 문제 건너뛰기" }).click();
