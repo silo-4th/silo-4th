@@ -488,3 +488,25 @@
   .avatar { display: grid; place-items: center; flex: none; aspect-ratio: 1; overflow: hidden; border-radius: 50%; background: radial-gradient(120% 120% at 35% 25%, #8ff0bf, #45d396 55%, #2fc287); }
   .avatar img { width: 100%; height: 100%; object-fit: cover; transform: scale(2.05); transform-origin: 51% 51%; user-select: none; pointer-events: none; }
 }
+
+/* 예상하지 못한 오류 화면의 꾀죄죄한 마스코트. 멍하게 천천히 흔들리고 눈만 깜빡인다. 시안 styles.css의 grubby를 옮겼다. */
+@layer components {
+  .grubby { width: 168px; height: 120px; }
+  .grubby-body { position: absolute; inset: 0; display: block; transform-origin: 50% 92%; animation: grubby-sway 3.6s ease-in-out infinite; }
+  .mascot.grubby .grubby-body img { position: absolute; inset: 0; animation: none; }
+  .grubby .mascot-lid { top: 39.8%; height: 27.8%; }
+  .grubby .mascot-lid.l { left: 34%; width: 15.71%; }
+  .grubby .mascot-lid.r { left: 53.64%; width: 14.93%; }
+  .grubby .mascot-lid::after { border-bottom-width: 2px; animation-name: grubby-lash; }
+  .grubby .mascot-lid::before { filter: blur(1.2px); animation-name: grubby-blink; }
+  .grubby .mascot-lid.l::before { background: linear-gradient(180deg, #60e3a3 0%, #34cf93 45%, #16b87d 100%); }
+  .grubby .mascot-lid.r::before { background: linear-gradient(180deg, #b6f3b5 0%, #6fdca0 45%, #22c47e 100%); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .grubby-body { animation: none; }
+  }
+}
+
+@keyframes grubby-sway { 0%, 100% { transform: rotate(-2.5deg) translateY(0); } 50% { transform: rotate(2.5deg) translateY(-2px); } }
+@keyframes grubby-blink { 0%, 46%, 49.5%, 100% { transform: scaleY(0); } 47.6% { transform: scaleY(1.04); } }
+@keyframes grubby-lash { 0%, 46.8%, 48.6%, 100% { opacity: 0; } 47.4%, 48% { opacity: 1; } }
