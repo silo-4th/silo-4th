@@ -183,6 +183,7 @@
   }
   .msg { max-width: 92%; font-size: 14px; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
   .msg.user { align-self: flex-end; white-space: pre-wrap; background: var(--color-ink); color: #fff; padding: --spacing(2.5) --spacing(3.5); border-radius: 14px 14px 4px 14px; }
+  .msg.user .quote { display: block; margin: 0 0 --spacing(1.5); padding-left: --spacing(2); border-left: 2px solid #6a6d70; color: #c9ccd0; font-size: 12.5px; }
   .msg.bot { align-self: flex-start; display: flex; gap: --spacing(2.5); max-width: 100%; }
   .msg.bot > .mascot { margin-top: 2px; }
   .bubble { background: var(--color-bg); padding: --spacing(3) --spacing(3.5); border-radius: 4px 14px 14px 14px; min-width: 0; }
@@ -192,6 +193,9 @@
   .bubble-retry { align-self: center; display: inline-flex; align-items: center; gap: --spacing(1); height: 28px; padding: 0 --spacing(3); border: 1px solid var(--color-line); border-radius: 999px; background: #fff; font-size: 12.5px; font-weight: 600; letter-spacing: normal; color: var(--color-ink-2); }
   .bubble-retry:hover { border-color: var(--color-gray-3); color: var(--color-ink); }
   .chat-list .msg.msg-follow { margin-top: calc(-1 * --spacing(2)); }
+  .sel-pop { position: absolute; z-index: 30; display: flex; flex-wrap: wrap; gap: --spacing(0.5); max-width: calc(100% - 16px); padding: --spacing(1); background: var(--color-ink); border-radius: var(--radius-md); box-shadow: var(--shadow-pop); }
+  .sel-pop button { display: inline-flex; align-items: center; gap: --spacing(1); padding: --spacing(1.5) --spacing(2.5); border-radius: var(--radius-sm); color: #fff; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .sel-pop button:hover { background: #33363a; }
   .bot-actions { display: flex; flex-wrap: wrap; gap: --spacing(1.5); margin: --spacing(-1) 0 0 36px; }
   .bot-actions button { height: 28px; padding: 0 --spacing(2.5); border-radius: 14px; border: 1px solid var(--color-line); background: #fff; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: --spacing(1); transition: border-color 0.2s, background 0.2s; }
   .bot-actions button:hover { border-color: #9fe3c4; background: var(--color-green-25); }

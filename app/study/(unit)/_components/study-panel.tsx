@@ -42,6 +42,7 @@ import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
 import { QuizHomeArt } from "./quiz-home-art";
+import { useSelectionAsk } from "./selection-ask";
 
 const TABS = [
   { id: "agent", label: "AI 에이전트" },
@@ -102,6 +103,17 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   const [quiz, sendQuiz] = useQuizSet(learnerId);
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
   const peek = useRef<HTMLButtonElement>(null);
+  const selectionAsks = useSelectionAsk();
+
+  // 드래그 메뉴로 보낸 질문의 답이 보이게, 패널이 닫혀 있거나 퀴즈 탭이 열려 있어도 에이전트 탭을 연다.
+  useEffect(
+    () =>
+      selectionAsks.listen(() => {
+        setOpened(true);
+        setShown("agent");
+      }),
+    [selectionAsks],
+  );
 
   // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 새로 보이는 버튼으로 포커스를 옮긴다.
   function closePanel() {
