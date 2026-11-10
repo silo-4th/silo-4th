@@ -3,6 +3,7 @@ import { expect, type Page } from "@playwright/test";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { concept, questionConcept, quizAttempt, quizProblem } from "@/lib/db/schema";
 import type { ProblemView } from "@/lib/quiz-problems";
+import { studyDay } from "@/lib/study-day";
 import { createLearner, daysFromNow, db, deleteLearner, firstUnits, saveAnswered, test } from "./fixtures";
 
 const PROBLEMS_PATH = "**/api/quiz-problems";
@@ -605,4 +606,52 @@ test("TC-255 퀴즈 홈에서 지난 문제 보기를 누르면 푼 문제가 �
 
   await back.click();
   await expect(home).toBeVisible();
+});
+
+test("TC-278 지난 문제 목록을 불러오는 동안 뼈대가 보이고, 불러오지 못하면 목록을 불러오지 못했어요와 다시 시도가 보이며, 다시 시도하면 목록이 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const view = await storeProblem(learnerId, await firstConcept(first.id), "그룹 조건은 어디에 쓰나요?");
+  await db.insert(quizAttempt).values({
+    id: randomUUID(),
+    learnerId,
+    problemId: view.id,
+    studyDay: studyDay(new Date()),
+    chosenIndex: 1,
+    confidence: "sure",
+    isCorrect: true,
+    appVersion: "e2e",
+  });
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let retried = false;
+  let listedAfterRetry = 0;
+  await page.route("**/api/quiz-attempts", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    if (retried) {
+      listedAfterRetry += 1;
+      return route.continue();
+    }
+    await held;
+    return route.fulfill({ status: 500 });
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  await panel.getByRole("button", { name: "지난 문제 보기" }).click();
+
+  await expect(panel.getByRole("status").filter({ hasText: "지난 문제를 불러오고 있어요" })).toHaveCount(1);
+  release();
+
+  const failed = panel.getByRole("heading", { name: "목록을 불러오지 못했어요" });
+  await expect(failed).toBeVisible();
+  retried = true;
+  await panel.getByRole("button", { name: "다시 시도" }).click();
+
+  await expect(panel.getByRole("list", { name: "지난 문제 목록" }).getByText(view.stem, { exact: true })).toBeVisible();
+  await expect(failed).toHaveCount(0);
+  expect(listedAfterRetry).toBeGreaterThan(0);
 });

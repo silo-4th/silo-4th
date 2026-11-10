@@ -122,7 +122,7 @@ test("TC-202 어제 학습한 학습자가 오늘 처음 학습 화면에 들어
   await expect(screen.getByText("넘어감", { exact: true })).toHaveCount(2);
   await expect(screen.getByText("물어봄", { exact: true })).toHaveCount(1);
   await expect(screen.getByRole("button", { name: "시작하기" })).toBeVisible();
-  await expect(screen.getByRole("button", { name: "오늘은 건너뛸게요" })).toBeVisible();
+  await expect(screen.getByRole("button", { name: "내일 꺼내 먹을래요" })).toBeVisible();
   expect((await setTimes(seeded.setId))?.shownAt).not.toBeNull();
 });
 
@@ -189,12 +189,12 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   expect(times?.postponedAt).toBeNull();
 });
 
-test("TC-205 오늘은 건너뛸게요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
+test("TC-205 내일 꺼내 먹을래요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
   const { setId, unit } = await seedSet(learnerId, [{ format: "mcq", reason: "read_no_question" }]);
 
   await page.goto(`/study/${unit.id}`);
   const screen = recallScreen(page);
-  await screen.getByRole("button", { name: "오늘은 건너뛸게요" }).click();
+  await screen.getByRole("button", { name: "내일 꺼내 먹을래요" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: unit.title, exact: true })).toBeVisible();
   await expect(screen).toHaveCount(0);
@@ -243,4 +243,40 @@ test("TC-236 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남
   expect(attempts.map((row) => row.recallItemId).sort()).toEqual([first.id, second.id].sort());
   await expect.poll(async () => (await setTimes(setId))?.completedAt).not.toBeNull();
   expect((await setTimes(setId))?.startedAt).not.toBeNull();
+});
+
+test("TC-276 꺼내 먹기 세트를 준비하는 동안 제목 아래에 준비 단계 3줄이 보이고, 준비가 끝나면 그 자리에 꺼낼 개념 목록과 시작하기가 보여요", async ({ page, learnerId }) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let seeded: Awaited<ReturnType<typeof seedSet>> | undefined;
+  await page.route(PREPARE_PATH, async (route) => {
+    seeded = await seedSet(learnerId, [
+      { format: "mcq", reason: "read_no_question" },
+      { format: "free", reason: "asked" },
+    ]);
+    await held;
+    return route.fulfill({ status: 204 });
+  });
+
+  const unit = await firstUnit();
+  await page.goto(`/study/${unit.id}`);
+  const screen = recallScreen(page);
+  const start = screen.getByRole("button", { name: "시작하기" });
+  await expect(screen.getByText("어제 공부한 내용을 챙기고 있어요")).toBeVisible();
+  for (const step of ["지난 공부 기록 살펴보기", "꺼내 볼 개념 3개 고르기", "문제 3개 만들기"]) {
+    await expect(screen.getByText(step)).toBeVisible();
+  }
+  await expect(start).toHaveCount(0);
+
+  release();
+
+  await expect(start).toBeVisible();
+  await expect(screen.getByRole("button", { name: "내일 꺼내 먹을래요" })).toBeVisible();
+  await expect(screen.getByText("지난 공부 기록 살펴보기")).toHaveCount(0);
+  if (!seeded) throw new Error("세트를 넣지 못했다.");
+  for (const { conceptTitle } of seeded.items) {
+    await expect(screen.getByText(conceptTitle, { exact: true })).toBeVisible();
+  }
 });
