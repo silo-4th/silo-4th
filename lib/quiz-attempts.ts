@@ -85,7 +85,7 @@ export function parseAttemptInput(input: unknown): AttemptInput | undefined {
 }
 
 // 포맷에 맞게 받은 답이다. 채점에 쓸 정답을 함께 들고 다닌다.
-// 잘 모르겠어요는 서술형에만 있고, 그때만 확신도가 비어도 받는다.
+// 잘 모르겠어요는 확신도 없이 받는다. 퀴즈 탭은 서술형에서만 보내고, 꺼내 먹기는 건너뛰거나 풀지 않고 결과를 연 문항에 형식과 관계없이 보낸다.
 type Answer =
   | { kind: "choice"; chosenIndex: number; confidence: Confidence; key: ChoiceAnswer }
   | { kind: "blank"; text: string; confidence: Confidence; key: BlankAnswer }
@@ -94,12 +94,13 @@ type Answer =
 
 function answerFor(
   problem: GradableProblem,
-  { chosenIndex, answerText, confidence, dontKnow }: AttemptInput,
+  { recallItemId, chosenIndex, answerText, confidence, dontKnow }: AttemptInput,
 ): Answer | undefined {
-  if (problem.format === "free" && dontKnow) {
-    return confidence === null ? { kind: "dont-know", text: answerText } : undefined;
+  if (dontKnow) {
+    const allowed = problem.format === "free" || recallItemId !== undefined;
+    return allowed && confidence === null ? { kind: "dont-know", text: answerText } : undefined;
   }
-  if (dontKnow || confidence === null) return undefined;
+  if (confidence === null) return undefined;
   switch (problem.format) {
     case "mcq":
       if (chosenIndex === null || chosenIndex >= problem.answer.choices.length) return undefined;
