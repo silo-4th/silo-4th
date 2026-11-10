@@ -5,6 +5,7 @@ import {
   type DwellClock,
   dwellSeconds,
   hideDwell,
+  INTRO_KEY,
   readingSection,
   showDwell,
   startDwell,
@@ -14,6 +15,8 @@ import { sectionKey } from "./scroll-to-section";
 const SECTION_VIEWS_PATH = "/api/section-views";
 
 type Section = { key: string; title: string; conceptId: string | null };
+// 개념이 아니라서 본 절로 남기지 않는다.
+const INTRO: Section = { key: INTRO_KEY, title: "인트로", conceptId: null };
 // 지금 읽는 절 하나다. 학습일은 본 절 응답으로 받으므로, 응답이 오기 전에 떠나도 기다렸다가 머문 시간을 보낸다.
 type Visit = { index: number; conceptId: string | null; studyDay: Promise<string | null>; clock: DwellClock };
 
@@ -27,7 +30,7 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
   useEffect(() => {
     const body = bodyRef.current;
     if (!body) return;
-    const tracked = (JSON.parse(sectionsKey) as Section[]).flatMap((section) => {
+    const tracked = [INTRO, ...(JSON.parse(sectionsKey) as Section[])].flatMap((section) => {
       const heading = document.getElementById(section.key);
       if (!heading) return [];
       // 절 주소로 가면 브라우저가 소제목을 scroll-margin-top만큼 띄워 둔다. 그 자리를 맨 위로 본다.
@@ -117,7 +120,7 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
       {sections.length > 0 && (
         <nav aria-label="목차" className="sticky top-0 z-[2] border-b border-line-2 bg-white/92 backdrop-blur-[6px]">
           <ul className="mx-auto flex max-w-[760px] gap-5.5 overflow-x-auto px-10 [scrollbar-width:none] max-[860px]:px-5">
-            {sections.map(({ key, title }, index) => (
+            {[INTRO, ...sections].map(({ key, title }, index) => (
               <li key={key} className="flex-none">
                 <a
                   href={`#${key}`}
@@ -131,7 +134,10 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
           </ul>
         </nav>
       )}
-      <div className="unit-body reader">{children}</div>
+      {/* 본문은 구간 탭 바로 아래에서 시작하므로, 탭보다 크게 띄우면 인트로로 갈 때 맨 위까지 올라가고 처음부터 기준선을 지난 것으로 잡힌다. */}
+      <div id={INTRO_KEY} className="unit-body reader scroll-mt-[100vh]">
+        {children}
+      </div>
     </article>
   );
 }

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
-import mascot from "@/app/_assets/mascot.png";
+import face from "@/app/_assets/mascot-plain.png";
 import { SignOutButton } from "@/app/_components/sign-out-button";
 
 export function AccountMenu({ name }: { name: string }) {
@@ -40,7 +40,7 @@ export function AccountMenu({ name }: { name: string }) {
         onClick={() => setOpen((value) => !value)}
         className="-mr-1 flex h-10 items-center rounded-full p-1 transition-colors hover:bg-[#2a2c2e]"
       >
-        <Avatar />
+        <Avatar className="size-8" />
       </button>
       <div
         id={menuId}
@@ -48,7 +48,7 @@ export function AccountMenu({ name }: { name: string }) {
         className="absolute top-[calc(100%+6px)] right-0 z-30 w-[260px] rounded-lg border border-line bg-white p-1.5 text-ink shadow-pop"
       >
         <div className="mb-1.5 flex items-center gap-2.5 border-b border-line px-2.5 pt-2 pb-3">
-          <Avatar />
+          <Avatar className="size-9" />
           <span>
             <b className="block text-sm">{name}</b>
             <span className="mt-0.5 block text-xs text-gray">로그인됨</span>
@@ -60,10 +60,11 @@ export function AccountMenu({ name }: { name: string }) {
   );
 }
 
-function Avatar() {
+// 확대해서 얼굴만 보여 주므로 원보다 크게 불러와야 흐려지지 않는다.
+function Avatar({ className }: { className: string }) {
   return (
-    <span className="grid size-8 flex-none place-items-center overflow-hidden rounded-full bg-green-50">
-      <Image src={mascot} alt="" width={32} height={32} />
+    <span className={`avatar ${className}`}>
+      <Image src={face} alt="" width={96} height={96} draggable={false} />
     </span>
   );
 }

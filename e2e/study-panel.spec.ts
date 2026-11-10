@@ -111,7 +111,7 @@ test("TC-212 답을 두 번 받으면 관련 문제 풀어보기는 마지막 �
     problemBodies.push(route.request().postDataJSON());
     return route.fulfill({ status: 500 });
   });
-  const related = page.getByRole("tabpanel", { name: "AI 에이전트" }).getByRole("button", { name: "관련 문제 풀어보기" });
+  const related = page.getByRole("tabpanel", { name: "AI 에이전트" }).getByRole("button", { name: "관련 문제 풀기" });
 
   await page.goto("/study");
   await ask(page, "질문 A");

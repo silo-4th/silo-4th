@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { firstUnits, test } from "./fixtures";
+import { firstUnits, test, unitsWithSections } from "./fixtures";
 
 test("TC-23 단원을 고르면 그 단원 본문이 보여요", async ({ page }) => {
   const [first, second] = await firstUnits(2);
@@ -37,4 +37,37 @@ test("TC-24 질문을 입력하고 보내면 대화 목록에 나와요", async 
   await input.press("Enter");
 
   await expect(conversation.nth(1)).toHaveText("WHERE와 HAVING은\n언제 다르게 쓰나요?");
+});
+
+test("TC-277 강의 목록에서 다른 단원을 누르면 새 본문이 오기 전까지 그 단원 제목과 본문 뼈대가 보이고, 본문이 오면 뼈대가 사라져요", async ({ page }) => {
+  const [first, second] = await unitsWithSections();
+  if (!first || !second?.sections[0]) throw new Error("테스트 DB에 절이 있는 단원이 두 개 이상 있어야 한다.");
+  const bodyTitle = (title: string) => page.getByRole("heading", { level: 1, name: title, exact: true });
+  const loading = page.getByRole("status").filter({ hasText: "본문을 불러오고 있어요" });
+
+  await page.goto(`/study/${first.id}`);
+  await expect(bodyTitle(first.title)).toBeVisible();
+
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === `/study/${second.id}`,
+    async (route) => {
+      if (route.request().headers().rsc) await held;
+      return route.continue();
+    },
+  );
+  await page.getByRole("button", { name: "강의 목록" }).click();
+  await page.getByRole("link", { name: second.title, exact: true }).click();
+
+  await expect(bodyTitle(second.title)).toBeVisible();
+  await expect(loading).toBeVisible();
+  await expect(bodyTitle(first.title)).toHaveCount(0);
+
+  release();
+
+  await expect(page.getByRole("heading", { name: second.sections[0].title, exact: true })).toBeVisible();
+  await expect(loading).toHaveCount(0);
 });
