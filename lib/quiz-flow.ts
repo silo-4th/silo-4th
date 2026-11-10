@@ -15,12 +15,12 @@ export type ProblemStage = {
   hintUsed: boolean;
   chosenIndex: number | null;
   text: string;
+  confidence: Confidence | null;
 };
 
 // 화면은 grading 단계에 들어오거나 sent가 바뀔 때마다 request를 보낸다.
 export type QuizFlow =
   | ProblemStage
-  | { stage: "confidence"; answer: Answer }
   | { stage: "grading"; request: AttemptInput; sent: 1 | 2 }
   | { stage: "grading-failed"; request: AttemptInput }
   | { stage: "explanation"; submitted: AttemptInput; result: AttemptResult }
@@ -30,9 +30,9 @@ export type QuizFlowEvent =
   | { type: "choose"; index: number }
   | { type: "write"; text: string }
   | { type: "show-hint" }
-  | { type: "submit" }
-  | { type: "dont-know" }
   | { type: "pick-confidence"; confidence: Confidence }
+  | { type: "check" }
+  | { type: "dont-know" }
   | { type: "graded"; result: AttemptResult }
   | { type: "grading-failed" }
   | { type: "retry" }
@@ -40,7 +40,7 @@ export type QuizFlowEvent =
 
 // 같은 풀이를 다시 보내도 서버가 한 줄만 남기도록 풀이 ID는 문제를 시작할 때 한 번만 만든다.
 export function startQuizFlow(problem: FlowProblem): ProblemStage {
-  return { stage: "problem", problem, attemptId: crypto.randomUUID(), hintUsed: false, chosenIndex: null, text: "" };
+  return { stage: "problem", problem, attemptId: crypto.randomUUID(), hintUsed: false, chosenIndex: null, text: "", confidence: null };
 }
 
 // 입력창의 maxLength처럼 넘친 글만 자른다. 통째로 버리면 붙여 넣은 글이 소리 없이 사라지고,
@@ -65,8 +65,13 @@ function answerOf(flow: ProblemStage): Answer | undefined {
   return answerText === null ? undefined : { ...common, chosenIndex: null, answerText };
 }
 
+// 답이 있어야 확신도를 고를 수 있게 보여 주고, 답과 확신도가 다 있어야 정답 확인으로 채점을 보낸다.
 export function canSubmit(flow: QuizFlow): boolean {
   return flow.stage === "problem" && answerOf(flow) !== undefined;
+}
+
+export function canCheck(flow: QuizFlow): boolean {
+  return flow.stage === "problem" && flow.confidence !== null && answerOf(flow) !== undefined;
 }
 
 function sending(request: AttemptInput): QuizFlow {
@@ -84,9 +89,11 @@ function onProblem(flow: ProblemStage, event: QuizFlowEvent): QuizFlow {
       return format === "mcq" ? flow : { ...flow, text: clipAnswer(event.text) };
     case "show-hint":
       return { ...flow, hintUsed: true };
-    case "submit": {
+    case "pick-confidence":
+      return { ...flow, confidence: event.confidence };
+    case "check": {
       const answer = answerOf(flow);
-      return answer ? { stage: "confidence", answer } : flow;
+      return answer && flow.confidence ? sending({ ...answer, confidence: flow.confidence, dontKnow: false }) : flow;
     }
     // 잘 모르겠어요는 서술형에만 있고, 확신도 없이 바로 채점을 보낸다.
     case "dont-know":
@@ -111,10 +118,6 @@ export function advanceQuizFlow(flow: QuizFlow, event: QuizFlowEvent): QuizFlow 
   switch (flow.stage) {
     case "problem":
       return onProblem(flow, event);
-    case "confidence":
-      return event.type === "pick-confidence"
-        ? sending({ ...flow.answer, confidence: event.confidence, dontKnow: false })
-        : flow;
     case "grading":
       if (event.type === "graded") return { stage: "explanation", submitted: flow.request, result: event.result };
       if (event.type !== "grading-failed") return flow;

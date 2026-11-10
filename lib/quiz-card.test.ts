@@ -4,7 +4,7 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttemptInput, AttemptResult } from "./quiz-attempts";
-import { BLANK_SHOWN, GRADING_TIMEOUT_MS, resultView, sendAttempt, shownStem } from "./quiz-card";
+import { BLANK_SHOWN, GRADING_TIMEOUT_MS, choiceMarks, fillLines, resultView, sendAttempt, shownStem } from "./quiz-card";
 
 const base = {
   attemptId: "44444444-4444-4444-8444-444444444444",
@@ -124,5 +124,30 @@ describe("퀴즈 컴포넌트 화면", () => {
     expect(alone.children.map((node) => node.type)).not.toContain("thematicBreak");
     expect(toString(alone)).toBe(`SELECT 문에서${BLANK_SHOWN}절을 쓴다`);
     expect(toString(alone).split(BLANK_SHOWN)).toHaveLength(2);
+  });
+
+  it("TC-280 채점 뒤 객관식 보기는 정답에 정답 표시, 내가 고른 오답에 오답 표시를 하고 나머지는 흐리게 보여 줘요", () => {
+    const answer = { choices: [{ text: "A" }, { text: "B" }, { text: "C" }, { text: "D" }], answerIndex: 2 };
+    const chose = (chosenIndex: number): AttemptInput => ({ ...base, chosenIndex, answerText: null, confidence: "sure", dontKnow: false });
+
+    const wrong: AttemptResult = { outcome: "graded", isCorrect: false, answer, explanation: "C가 맞아요." };
+    expect(choiceMarks(chose(1), wrong)).toEqual(["dim", "wrong", "right", "dim"]);
+
+    const right: AttemptResult = { outcome: "graded", isCorrect: true, answer, explanation: "C가 맞아요." };
+    expect(choiceMarks(chose(2), right)).toEqual(["dim", "dim", "right", "dim"]);
+  });
+
+  it("TC-281 채점 뒤 빈칸은 내 답 줄을 맞으면 정답 표시, 틀리면 오답 표시로 보여 주고, 틀렸을 때만 정답 줄을 하나 더 보여 줘요", () => {
+    const wrote = (answerText: string): AttemptInput => ({ ...base, chosenIndex: null, answerText, confidence: "sure", dontKnow: false });
+    const answer = { accepted: ["HAVING"] };
+
+    const right: AttemptResult = { outcome: "graded", isCorrect: true, answer, explanation: "그룹 조건이에요." };
+    expect(fillLines(wrote("HAVING"), right)).toEqual([{ label: "내 답", text: "HAVING", mark: "right" }]);
+
+    const wrong: AttemptResult = { outcome: "graded", isCorrect: false, answer, explanation: "그룹 조건이에요." };
+    expect(fillLines(wrote("WHERE"), wrong)).toEqual([
+      { label: "내 답", text: "WHERE", mark: "wrong" },
+      { label: "정답", text: "HAVING", mark: "right" },
+    ]);
   });
 });

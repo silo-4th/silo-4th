@@ -165,6 +165,12 @@ export function setTitle(results: SetResults): string {
   return resultTitle(setItems(results), "퀴즈를 마쳤어요");
 }
 
+// 헷갈렸어도 맞혔으면 맞힌 것으로 본다. 결과 화면의 마스코트가 이때 활짝 웃는다.
+export function setAllRight(results: SetResults): boolean {
+  const items = setItems(results);
+  return items.length > 0 && items.every(({ chip }) => chip === "맞혔어요" || chip === "맞았지만 헷갈렸어요");
+}
+
 export function setGuide(results: SetResults): string {
   return needsReview(setItems(results))
     ? "헷갈리거나 틀린 개념은 본문에서 한 번 더 읽어 보면 좋아요."

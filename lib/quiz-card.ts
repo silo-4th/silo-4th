@@ -35,6 +35,31 @@ export function resultView(submitted: AttemptInput, result: AttemptResult): Resu
   return { verdict, correctAnswers: "accepted" in answer ? answer.accepted : [answer.modelAnswer], myAnswer };
 }
 
+export type Mark = "right" | "wrong" | "dim";
+
+// 채점 뒤에도 객관식 보기 목록을 그대로 두고 표시만 바꾼다. 맞혔든 틀렸든 정답 보기에는 정답 표시가 붙는다.
+export function choiceMarks(submitted: AttemptInput, result: AttemptResult): Mark[] {
+  const { answer } = result;
+  if (!("choices" in answer)) return [];
+  return answer.choices.map((_, index) =>
+    index === answer.answerIndex ? "right" : index === submitted.chosenIndex ? "wrong" : "dim",
+  );
+}
+
+export type FillLine = { label: "내 답" | "정답"; text: string; mark: Exclude<Mark, "dim"> };
+
+// 빈칸은 내 답을 보기 모양 한 줄로 보여 주고, 틀렸을 때만 인정하는 답을 정답 줄로 더한다.
+export function fillLines(submitted: AttemptInput, result: AttemptResult): FillLine[] {
+  const { answer } = result;
+  if (!("accepted" in answer)) return [];
+  const myAnswer = submitted.answerText ?? "";
+  if (result.outcome === "graded" && result.isCorrect) return [{ label: "내 답", text: myAnswer, mark: "right" }];
+  return [
+    { label: "내 답", text: myAnswer, mark: "wrong" },
+    { label: "정답", text: answer.accepted.join(", "), mark: "right" },
+  ];
+}
+
 // 실패 이유는 화면이 구분하지 않는다. 흐름 함수가 한 번 다시 보내고, 그래도 실패하면 학습자가 고른다.
 export async function sendAttempt(request: AttemptInput): Promise<AttemptResult | undefined> {
   const controller = new AbortController();
