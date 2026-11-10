@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowUp, Menu, SquarePen } from "lucide-react";
+import { ArrowUp, ListChecks, Menu, SquarePen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { type FormEvent, Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -217,6 +217,8 @@ export function QuestionPanel({
   }
 
   function send(formData: FormData) {
+    // 빈 질문이어도 폼은 비워지므로, 늘어난 입력창 높이를 먼저 되돌린다.
+    if (input.current) input.current.style.height = "";
     const content = String(formData.get("question") ?? "").trim();
     if (!content || !openedSession) return;
     void ask({ id: crypto.randomUUID(), sessionId: openedSession, unitId, content });
@@ -235,6 +237,13 @@ export function QuestionPanel({
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     if (openedSession) event.currentTarget.form?.requestSubmit();
+  }
+
+  // 글이 늘면 입력창도 CSS의 최대 높이까지 함께 늘고, 그보다 길면 안에서 스크롤된다.
+  function growInput(event: FormEvent<HTMLTextAreaElement>) {
+    const field = event.currentTarget;
+    field.style.height = "";
+    field.style.height = `${field.scrollHeight}px`;
   }
 
   // 메뉴를 닫으면 누른 대화 기록 버튼으로 포커스를 돌려 키보드 사용자가 자리를 잃지 않게 한다.
@@ -331,7 +340,8 @@ export function QuestionPanel({
             {last?.status === "answered" && (
               <div className="bot-actions">
                 <button type="button" onClick={() => onSolveRelated(last.id)}>
-                  관련 문제 풀어보기
+                  <ListChecks size={12} />
+                  관련 문제 풀기
                 </button>
               </div>
             )}
@@ -370,6 +380,7 @@ export function QuestionPanel({
             aria-label="질문"
             placeholder="궁금한 걸 편하게 물어보세요. 예: 이건 언제 써요?"
             onKeyDown={sendOnEnter}
+            onInput={growInput}
           />
           <div className="composer-bar">
             <button type="submit" aria-label="보내기" disabled={!openedSession} className="send">
@@ -377,6 +388,7 @@ export function QuestionPanel({
             </button>
           </div>
         </form>
+        <p className="disclaimer">AI는 실수할 수 있어요. 나눈 대화는 내게 맞는 퀴즈를 만드는 데 활용돼요.</p>
       </div>
       {/* 낭독기는 이미 있던 알림 영역에 들어온 글만 읽으므로 영역은 늘 두고 안내만 넣었다 뺀다. */}
       <div aria-live="polite">{notice && <p className="toast">{notice.text}</p>}</div>
