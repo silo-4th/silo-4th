@@ -1,4 +1,5 @@
 import { expect, type Page, test as guest } from "@playwright/test";
+import { koreanToday } from "@/lib/exam-date";
 import { daysFromNow, test } from "./fixtures";
 
 function onStudy(url: URL) {
@@ -32,6 +33,7 @@ test.describe("저장에 동의하지 않은 학습자", () => {
     const screen = startScreen(page);
 
     await page.goto("/start");
+    await expect(screen.examDate).toHaveValue(koreanToday(new Date()));
     await expect(screen.submit).toBeEnabled();
 
     await screen.examDate.fill("");
