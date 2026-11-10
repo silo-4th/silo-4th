@@ -1,9 +1,11 @@
 "use client";
 
 import { House, X } from "lucide-react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import mascot from "@/app/_assets/mascot.png";
 import { Burst } from "@/app/_components/burst";
 import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
@@ -144,7 +146,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
           </span>
           <span className="peek-clip">
             <span className="peek-body">
-              <Mascot size={104} />
+              <Mascot size={104} mood="zip" hoverMood="cat" />
             </span>
           </span>
         </button>
@@ -340,7 +342,7 @@ function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
       </div>
       <div className="quiz-done flex flex-col items-center px-1 text-center">
         <Burst>
-          <Mascot size={72} spin landing={setAllRight(results) ? "grin" : "open"} />
+          <Mascot size={72} spin mood={setAllRight(results) ? "wow" : "smile"} />
         </Burst>
         <h2 ref={focusOnMount} tabIndex={-1} className="mt-3 mb-1.5 text-lg leading-snug font-bold tracking-[-0.02em] outline-none">
           {setTitle(results)}
@@ -393,7 +395,7 @@ function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
       <QuizHomeArt />
-      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">확인 문제</h2>
+      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">이해했는지 확인해 볼까요?</h2>
       {known !== undefined && (
         <p className="text-[13.5px] leading-relaxed text-gray">
           {known ? "AI가 내가 나눈 대화를 바탕으로" : "AI가 내 대화를 바탕으로 문제를 내요."}
@@ -450,8 +452,8 @@ function QuizGauge({ number, filled }: { number: number; filled: number }) {
           <i key={index} className={index < filled ? "on" : undefined} />
         ))}
       </div>
-      <span className="quiz-runner" style={{ transform: runner }}>
-        <Mascot size={22} />
+      <span aria-hidden className="quiz-runner" style={{ transform: runner }}>
+        <Image src={mascot} width={22} height={22} alt="" draggable={false} />
       </span>
       <p className="sr-only">
         문제 {number} / {SET_SIZE}

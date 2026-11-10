@@ -251,7 +251,7 @@
   }
   .mascot--live::after { animation: mascot-hop-shadow 4.2s infinite; }
   .mascot--spin::after { animation: mascot-turn-shadow 3.8s infinite; }
-  .mascot-lid { position: absolute; top: 37.6%; height: 27.8%; border-radius: 50%; overflow: hidden; pointer-events: none; }
+  .mascot-lid { position: absolute; top: 39.8%; height: 27.8%; border-radius: 50%; overflow: hidden; pointer-events: none; }
   .mascot-lid.l { left: 27.6%; width: 22%; }
   .mascot-lid.r { left: 55.1%; width: 20.9%; }
   .mascot-lid::before {
@@ -271,23 +271,15 @@
 }
 
 @keyframes mascot-frames {
-  0%, 39.99% { background-position: 0% 0; }
-  40.44% { background-position: 6.6667% 0; }
-  40.88% { background-position: 13.3333% 0; }
-  41.31% { background-position: 20% 0; }
-  41.75% { background-position: 26.6667% 0; }
-  42.19% { background-position: 33.3333% 0; }
-  42.62% { background-position: 40% 0; }
-  43.06% { background-position: 46.6667% 0; }
+  0%, 41.49% { background-position: 0% 0; }
+  42% { background-position: 13.3333% 0; }
+  42.5% { background-position: 26.6667% 0; }
+  43% { background-position: 40% 0; }
   43.5% { background-position: 53.3333% 0; }
-  43.94% { background-position: 60% 0; }
-  44.38% { background-position: 66.6667% 0; }
-  44.81% { background-position: 73.3333% 0; }
-  45.25% { background-position: 80% 0; }
-  45.69% { background-position: 86.6667% 0; }
-  46.12% { background-position: 93.3333% 0; }
-  46.56% { background-position: 100% 0; }
-  47%, 100% { background-position: 0% 0; }
+  44% { background-position: 66.6667% 0; }
+  44.5% { background-position: 80% 0; }
+  45% { background-position: 93.3333% 0; }
+  45.5%, 100% { background-position: 0% 0; }
 }
 @keyframes mascot-hop {
   0% { transform: translateY(0) scale(1, 1); animation-timing-function: ease-in-out; }
@@ -398,7 +390,7 @@
   .quiz-strip i { flex: 1; height: 100%; border-radius: 2px; background: var(--color-line-2); transition: background-color 0.3s ease-out; }
   .quiz-strip i.on { background: var(--color-green); }
   .quiz-runner { position: absolute; left: 0; right: 0; top: 50%; height: 0; pointer-events: none; transition: transform 0.3s ease-out; }
-  .quiz-runner .mascot { position: absolute; top: -11px; left: -11px; filter: drop-shadow(0 2px 2px rgba(40, 170, 110, 0.25)); }
+  .quiz-runner img { position: absolute; top: -11px; left: -11px; width: 22px; height: 22px; filter: drop-shadow(0 2px 2px rgba(40, 170, 110, 0.25)); }
   @media (prefers-reduced-motion: reduce) {
     .quiz-strip i, .quiz-runner { transition: none; }
   }
@@ -407,7 +399,9 @@
 /* 퀴즈 홈의 시험지 마스코트와 결과 화면의 마스코트, 반짝이다. 시안 styles.css의 quiz-art, quiz-done, burst를 옮겼다. */
 @layer components {
   .mascot-face { position: absolute; inset: 0; opacity: 0; }
+  .mascot-face--hop { animation: mascot-face-hop 4.2s infinite ease-in-out; }
   .mascot-face--land { animation: mascot-face-land 3.8s infinite ease-in-out; }
+  .mascot:hover .mascot-face--hover, button:hover .mascot-face--hover, button:focus-visible .mascot-face--hover { opacity: 1; }
   .quiz-done .mascot--spin .mascot-body { animation-name: mascot-turn-low; }
 
   .quiz-art { width: 139px; height: 99px; }
@@ -453,6 +447,7 @@
   }
 }
 
+@keyframes mascot-face-hop { 0%, 28%, 56%, 100% { opacity: 0; } 32%, 51% { opacity: 1; } }
 @keyframes mascot-face-land { 0%, 45.49%, 92%, 100% { opacity: 0; } 45.5%, 84% { opacity: 1; } }
 /* 결과 화면은 마스코트 위 여백이 좁아 낮게 뛴다. */
 @keyframes mascot-turn-low {
@@ -482,3 +477,31 @@
   30% { transform: scale(2.4); opacity: 1; }
   100% { transform: scale(3.2); opacity: 0; }
 }
+
+/* 프로필 사진은 입 없는 마스코트의 얼굴을 확대해 원 안에 채운다. 바탕을 몸 색으로 칠해 윤곽이 보이지 않게 한다. */
+@layer components {
+  .avatar { display: grid; place-items: center; flex: none; aspect-ratio: 1; overflow: hidden; border-radius: 50%; background: radial-gradient(120% 120% at 35% 25%, #8ff0bf, #45d396 55%, #2fc287); }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; transform: scale(2.05); transform-origin: 51% 51%; user-select: none; pointer-events: none; }
+}
+
+/* 예상하지 못한 오류 화면의 꾀죄죄한 마스코트. 멍하게 천천히 흔들리고 눈만 깜빡인다. 시안 styles.css의 grubby를 옮겼다. */
+@layer components {
+  .grubby { width: 168px; height: 120px; }
+  .grubby-body { position: absolute; inset: 0; display: block; transform-origin: 50% 92%; animation: grubby-sway 3.6s ease-in-out infinite; }
+  .mascot.grubby .grubby-body img { position: absolute; inset: 0; animation: none; }
+  .grubby .mascot-lid { top: 39.8%; height: 27.8%; }
+  .grubby .mascot-lid.l { left: 34%; width: 15.71%; }
+  .grubby .mascot-lid.r { left: 53.64%; width: 14.93%; }
+  .grubby .mascot-lid::after { border-bottom-width: 2px; animation-name: grubby-lash; }
+  .grubby .mascot-lid::before { filter: blur(1.2px); animation-name: grubby-blink; }
+  .grubby .mascot-lid.l::before { background: linear-gradient(180deg, #60e3a3 0%, #34cf93 45%, #16b87d 100%); }
+  .grubby .mascot-lid.r::before { background: linear-gradient(180deg, #b6f3b5 0%, #6fdca0 45%, #22c47e 100%); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .grubby-body { animation: none; }
+  }
+}
+
+@keyframes grubby-sway { 0%, 100% { transform: rotate(-2.5deg) translateY(0); } 50% { transform: rotate(2.5deg) translateY(-2px); } }
+@keyframes grubby-blink { 0%, 46%, 49.5%, 100% { transform: scaleY(0); } 47.6% { transform: scaleY(1.04); } }
+@keyframes grubby-lash { 0%, 46.8%, 48.6%, 100% { opacity: 0; } 47.4%, 48% { opacity: 1; } }

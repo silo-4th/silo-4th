@@ -315,7 +315,7 @@ export function QuestionPanel({
                   )}
                   {turn.status === "failed" && (
                     <li className="msg bot">
-                      <Mascot size={26} />
+                      <Mascot size={26} mood="plain" />
                       <div className="bubble">
                         <p role="alert" className="font-semibold text-red">
                           {FAIL_MESSAGES[turn.reason]}
@@ -352,7 +352,7 @@ export function QuestionPanel({
               {waiting.length > 0 && (
                 <div className="msg bot">
                   <span className="flex flex-none">
-                    <Mascot size={26} thinking />
+                    <Mascot size={26} mood="think" />
                   </span>
                   <div className="flex flex-col items-start gap-1.5">
                     <div aria-hidden className="bubble">
