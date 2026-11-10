@@ -1,18 +1,29 @@
 "use client";
 
 import { Calendar, LoaderCircle } from "lucide-react";
-import { useActionState, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { submitStart } from "./actions";
 
 export function StartForm({ today }: { today: string }) {
   const [state, formAction, pending] = useActionState(submitStart, null);
   const [examDate, setExamDate] = useState(today);
   const [consented, setConsented] = useState(true);
+  const formRef = useRef<HTMLFormElement>(null);
   const examDateId = useId();
   const ready = examDate !== "" && consented;
 
+  // 화면이 뜨자마자 입력하면 React가 넘겨받기 전의 입력은 상태에 들어오지 않는다. 넘겨받을 때 입력칸의 실제 값을 다시 읽는다.
+  useEffect(() => {
+    const fields = formRef.current?.elements;
+    if (!fields) return;
+    const date = fields.namedItem("examDate");
+    const consent = fields.namedItem("consent");
+    if (date instanceof HTMLInputElement) setExamDate(date.value);
+    if (consent instanceof HTMLInputElement) setConsented(consent.checked);
+  }, []);
+
   return (
-    <form action={formAction}>
+    <form ref={formRef} action={formAction}>
       <div className="mb-5 flex flex-col gap-2">
         <label htmlFor={examDateId} className="text-[13px] font-semibold text-ink-2">
           시험 날짜
