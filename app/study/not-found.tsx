@@ -18,5 +18,5 @@ export default function StudyNotFound() {
 
 async function LearnerAccount() {
   const learner = await requireLearner();
-  return <AccountMenu name={learner.name} />;
+  return <AccountMenu name={learner.name} light />;
 }
