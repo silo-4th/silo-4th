@@ -78,9 +78,8 @@ export async function findLearner(requestHeaders: Headers) {
   }
 }
 
-export async function getCurrentLearner() {
-  return findLearner(await headers());
-}
+// 시작 화면처럼 헤더와 본문이 함께 불러도 한 요청 안에서는 DB를 한 번만 조회한다.
+export const getCurrentLearner = cache(async () => findLearner(await headers()));
 
 type CookieWriter = {
   set(

@@ -2,7 +2,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import logo from "@/app/_assets/pluck-logo.svg";
 
-// children은 헤더 오른쪽 끝에 둔다. 꺼내 먹기는 계정 메뉴를 넣는다.
+// children은 헤더 오른쪽 끝에 둔다. 로그인한 학습자가 보는 화면은 계정 메뉴를 넣는다.
 export function BrandHeader({ children }: { children?: ReactNode }) {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-white">

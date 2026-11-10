@@ -51,7 +51,7 @@ test("TC-208 상단 바 아바타를 눌러 로그아웃하면 첫 화면으로 
 
   await page.goto("/study");
   await page.getByRole("banner").getByRole("button", { name: "계정 메뉴" }).click();
-  await page.getByRole("button", { name: "로그아웃" }).click();
+  await page.getByRole("menuitem", { name: "로그아웃" }).click();
 
   await expect(page).toHaveURL("/");
   await expect(googleButton).toBeVisible();
