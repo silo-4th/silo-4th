@@ -2,17 +2,27 @@
 
 import { ArrowUp, Menu, SquarePen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { askQuestion } from "@/lib/answer-stream";
+import {
+  ANSWER_TONES,
+  type AnswerTone,
+  DEFAULT_TONE,
+  readAnswerTone,
+  saveAnswerTone,
+  subscribeAnswerTone,
+} from "@/lib/answer-tone";
 import type { SessionSummary, SessionTurn } from "@/lib/question-sessions";
 import { HistoryMenu } from "./history-menu";
+import { ToneMenu } from "./tone-menu";
 
 const SLOW_MS = 5_000;
+const NOTICE_MS = 2_500;
 // 새로고침해도 보던 대화를 다시 열고, 새 탭은 마지막으로 질문한 대화로 열리게 탭마다 따로 기억한다.
 const OPENED_SESSION_KEY = "question-panel-session";
 
@@ -60,12 +70,22 @@ function savedTurn(sessionId: string, openedUnitId: string, { questionId, unitId
   return answer === null ? { ...question, status: "failed", reason: "failed" } : { ...question, status: "answered", answer };
 }
 
-export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId: string) => void }) {
+export function QuestionPanel({
+  learnerId,
+  onSolveRelated,
+}: {
+  learnerId: string;
+  onSolveRelated: (questionId: string) => void;
+}) {
   const { unitId } = useParams<{ unitId: string }>();
   const router = useRouter();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [openedSession, setOpenedSession] = useState<string>();
   const [historyOpened, setHistoryOpened] = useState(false);
+  // 서버에서 그릴 때는 저장소가 없어 기본 말투로 그리고, 브라우저에서 저장된 말투로 바꾼다.
+  const tone = useSyncExternalStore(subscribeAnswerTone, () => readAnswerTone(learnerId), () => DEFAULT_TONE);
+  // 같은 문구를 다시 띄워도 사라지는 타이머가 새로 시작되게 안내마다 새 객체로 둔다.
+  const [notice, setNotice] = useState<{ text: string }>();
   // 세션을 오가도 답을 받는 중인 질문이 이어지도록 모든 세션의 질문을 한곳에 두고, 열린 세션의 질문만 보여 준다.
   const [turns, setTurns] = useState<Turn[]>([]);
   // 이미 불러왔거나 이 탭에서 만든 세션이다. 다시 불러오지 않아 화면에서 받는 중인 답을 덮지 않는다.
@@ -145,6 +165,18 @@ export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId:
     setListAttempt((count) => count + 1);
   }
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(undefined), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  function changeTone(next: AnswerTone) {
+    saveAnswerTone(learnerId, next);
+    const { changedTo } = ANSWER_TONES.find(({ id }) => id === next) ?? ANSWER_TONES[0];
+    setNotice({ text: `말투를 ${changedTo} 바꿨어요. 다음 답변부터 적용돼요.` });
+  }
+
   function update(id: string, change: (turn: Turn) => Turn) {
     setTurns((previous) => previous.map((turn) => (turn.id === id ? change(turn) : turn)));
   }
@@ -162,7 +194,7 @@ export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId:
       SLOW_MS,
     );
     const { id: questionId, sessionId, unitId: askedUnitId, content } = question;
-    const result = await askQuestion({ questionId, sessionId, unitId: askedUnitId, content }, (answer) =>
+    const result = await askQuestion({ questionId, sessionId, unitId: askedUnitId, content, tone }, (answer) =>
       update(question.id, (turn) => (turn.status === "sending" ? { ...turn, answer } : turn)),
     );
     clearTimeout(slow);
@@ -237,9 +269,12 @@ export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId:
           >
             <Menu size={18} />
           </button>
-          <button type="button" aria-label="새 대화" title="새 대화" onClick={startSession} disabled={!openedSession} className="tool-btn">
-            <SquarePen size={17} />
-          </button>
+          <div className="panel-tools-end">
+            <button type="button" aria-label="새 대화" title="새 대화" onClick={startSession} disabled={!openedSession} className="tool-btn">
+              <SquarePen size={17} />
+            </button>
+            <ToneMenu tone={tone} onChange={changeTone} />
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="chat">
@@ -343,6 +378,8 @@ export function QuestionPanel({ onSolveRelated }: { onSolveRelated: (questionId:
           </div>
         </form>
       </div>
+      {/* 낭독기는 이미 있던 알림 영역에 들어온 글만 읽으므로 영역은 늘 두고 안내만 넣었다 뺀다. */}
+      <div aria-live="polite">{notice && <p className="toast">{notice.text}</p>}</div>
       {historyOpened && (
         <HistoryMenu
           sessions={sessions}

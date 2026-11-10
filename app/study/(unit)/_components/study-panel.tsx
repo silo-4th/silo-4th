@@ -1,9 +1,10 @@
 "use client";
 
-import { X } from "lucide-react";
+import { House, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { Burst } from "@/app/_components/burst";
 import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
@@ -28,6 +29,7 @@ import {
   saveProblem,
   saveSetFinished,
   setGuide,
+  setAllRight,
   setItems,
   setTitle,
   settleQuizSet,
@@ -36,6 +38,7 @@ import {
 import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
+import { QuizHomeArt } from "./quiz-home-art";
 
 const TABS = [
   { id: "agent", label: "AI 에이전트" },
@@ -176,7 +179,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
           </div>
         </div>
         <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
-          <QuestionPanel onSolveRelated={solveRelated} />
+          <QuestionPanel learnerId={learnerId} onSolveRelated={solveRelated} />
         </div>
         <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="flex min-h-0 flex-1 flex-col">
           <QuizTabBody
@@ -257,10 +260,10 @@ type QuizTabBodyProps = {
 
 function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, onNext, onLeaveResult }: QuizTabBodyProps) {
   const { tab, results } = set;
-  // 지난 문제를 연 퀴즈 홈 상태다. 관련 문제로 홈을 떠났다가 돌아오면 새 홈 상태라 지난 문제가 아니라 홈을 보여 준다.
+  // 지난 문제를 연 퀴즈 홈이나 결과 상태다. 관련 문제로 그 화면을 떠났다가 돌아오면 새 상태라 지난 문제가 아니라 그 화면을 보여 준다.
   const [pastOf, setPastOf] = useState<QuizTab>();
   const pastShown = pastOf === tab;
-  // 누른 돌아가기 버튼이 사라지므로 지난 문제 보기 버튼으로 포커스를 돌려준다. 돌아온 직후 한 번만 옮겨, 나중에 탭을 다시 열 때는 옮기지 않는다.
+  // 누른 돌아가기 버튼이 사라지므로 연 화면의 지난 문제 보기 버튼으로 포커스를 돌려준다. 돌아온 직후 한 번만 옮겨, 나중에 탭을 다시 열 때는 옮기지 않는다.
   const backPending = useRef(false);
   const [focusBack] = useState(() => (element: HTMLElement | null) => {
     if (!element || !backPending.current) return;
@@ -275,18 +278,17 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
       {/* 지난 문제는 패널 맨 위에 제목 줄을 두므로 첫 진입 안내를 가린다. 닫은 안내가 다시 뜨지 않게 지우지 않고 숨긴다. */}
       <div hidden={pastShown}>{guide}</div>
       {/* 읽고 물어볼 때마다 안내가 바뀌므로, 탭을 열 때마다 새로 그려 다시 묻는다. */}
-      {tab.stage === "idle" &&
-        active &&
-        (pastShown ? (
-          <PastProblems
-            onBack={() => {
-              backPending.current = true;
-              setPastOf(undefined);
-            }}
-          />
-        ) : (
-          <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
-        ))}
+      {pastShown && active && (
+        <PastProblems
+          onBack={() => {
+            backPending.current = true;
+            setPastOf(undefined);
+          }}
+        />
+      )}
+      {tab.stage === "idle" && active && !pastShown && (
+        <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
+      )}
       {waiting && (
         <div className="flex justify-center pt-8">
           <Mascot size={88} spin />
@@ -312,35 +314,58 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
           />
         </>
       )}
-      {tab.stage === "result" && <QuizResult results={results} onLeave={onLeaveResult} />}
+      {tab.stage === "result" && !pastShown && (
+        <QuizResult results={results} pastRef={focusBack} onLeave={onLeaveResult} onPast={() => setPastOf(tab)} />
+      )}
     </div>
   );
 }
 
+type QuizResultProps = {
+  results: SetResults;
+  pastRef: (element: HTMLElement | null) => void;
+  onLeave: (leave: Leave) => void;
+  onPast: () => void;
+};
+
 // 누른 결과 보기 버튼이 사라지므로 제목으로 포커스를 옮긴다. 이어 풀기로 결과가 뜰 때는 패널 밖에서 읽던 자리를 빼앗지 않는다.
-function QuizResult({ results, onLeave }: { results: SetResults; onLeave: (leave: Leave) => void }) {
+// 결과가 길면 아래 두 버튼은 패널 아래에 붙어 늘 보인다.
+function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
   return (
-    <div className="flex flex-col">
-      <h2 ref={focusOnMount} tabIndex={-1} className="text-[21px] leading-snug font-bold tracking-tight outline-none">
-        {setTitle(results)}
-      </h2>
-      <ol className="mt-5 flex flex-col gap-2">
+    <div className="flex flex-1 flex-col">
+      <div className="-mx-2.5 -mt-5 flex h-[47px] flex-none items-center">
+        <button type="button" aria-label="퀴즈 홈" title="퀴즈 홈" onClick={() => onLeave("home")} className="tool-btn">
+          <House size={18} aria-hidden />
+        </button>
+      </div>
+      <div className="quiz-done flex flex-col items-center px-1 text-center">
+        <Burst>
+          <Mascot size={72} spin landing={setAllRight(results) ? "grin" : "open"} />
+        </Burst>
+        <h2 ref={focusOnMount} tabIndex={-1} className="mt-3 mb-1.5 text-lg leading-snug font-bold tracking-[-0.02em] outline-none">
+          {setTitle(results)}
+        </h2>
+        <p className="mb-4 text-[13.5px] leading-relaxed text-gray">{setGuide(results)}</p>
+      </div>
+      <ol className="mt-1 rounded-lg bg-[color-mix(in_srgb,var(--color-bg)_80%,#fff)] px-4 py-1">
         {setItems(results).map((slot, index) => (
-          <li key={index} className="card flex items-center justify-between gap-3">
-            <span className="text-[15px] font-semibold">
+          <li
+            key={index}
+            className="flex items-center justify-between gap-3 border-t border-[color-mix(in_srgb,var(--color-line)_55%,var(--color-bg))] py-2.5 first:border-t-0"
+          >
+            <span className="min-w-0 text-sm font-semibold text-ink">
               {index + 1}. {slot.conceptTitle}
             </span>
             <ResultChipLabel chip={slot.chip} />
           </li>
         ))}
       </ol>
-      <p className="mt-4 text-sm leading-relaxed text-gray">{setGuide(results)}</p>
-      <div className="mt-6 flex flex-col gap-2">
-        <button type="button" onClick={() => onLeave("restart")} className="btn btn-dark btn-lg btn-block">
-          새 문제 풀기
+      <div className="sticky -bottom-5 z-2 mt-4.5 -mb-5 flex gap-2 bg-white pt-3 pb-5 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-linear-to-b before:from-white/0 before:to-white">
+        <button type="button" ref={pastRef} onClick={onPast} className="btn flex-1">
+          지난 문제 보기
         </button>
-        <button type="button" onClick={() => onLeave("home")} className="btn btn-lg btn-block">
-          퀴즈 홈
+        <button type="button" onClick={() => onLeave("restart")} className="btn btn-dark flex-1">
+          새 문제 풀기
         </button>
       </div>
     </div>
@@ -367,7 +392,7 @@ function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
 
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
-      <Mascot size={96} />
+      <QuizHomeArt />
       <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">확인 문제</h2>
       {known !== undefined && (
         <p className="text-[13.5px] leading-relaxed text-gray">

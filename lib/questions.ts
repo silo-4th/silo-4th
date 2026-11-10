@@ -18,6 +18,7 @@ import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
 import { concept, message, question, questionConcept, questionSession, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import { type AnswerTone, DEFAULT_TONE, isAnswerTone } from "@/lib/answer-tone";
 import { streamAnswer } from "@/lib/llm/answer";
 import { classifyQuestion, summarizeQuestion } from "@/lib/llm/tagging";
 import { type SessionSummary, type SessionTurn, toSessionList } from "@/lib/question-sessions";
@@ -25,7 +26,7 @@ import { knownConceptIds, normalizeKeywords } from "@/lib/question-tags";
 import { studyDay } from "@/lib/study-day";
 import { isUuid } from "@/lib/uuid";
 
-export type AskInput = { questionId: string; sessionId: string; unitId: string; content: string };
+export type AskInput = { questionId: string; sessionId: string; unitId: string; content: string; tone: AnswerTone };
 
 export type Claim =
   // 이 요청이 AI 답을 받아 저장해야 한다.
@@ -49,11 +50,13 @@ const PAST_SUMMARY_LIMIT = 5;
 // 요청 본문은 화면을 거치지 않고도 보낼 수 있어 타입과 달리 아무 값이나 올 수 있다.
 export function parseAskInput(input: unknown): AskInput | undefined {
   if (typeof input !== "object" || input === null) return undefined;
-  const { questionId, sessionId, unitId, content } = input as Record<string, unknown>;
+  const { questionId, sessionId, unitId, content, tone = DEFAULT_TONE } = input as Record<string, unknown>;
   if (!isUuid(questionId) || !isUuid(sessionId)) return undefined;
   if (typeof unitId !== "string" || typeof content !== "string") return undefined;
   if (!content.trim() || content.length > MAX_QUESTION_LENGTH) return undefined;
-  return { questionId, sessionId, unitId, content };
+  // 말투는 정해 둔 id만 받는다. 학습자가 보낸 글이 답변 프롬프트에 들어가지 않게 한다.
+  if (!isAnswerTone(tone)) return undefined;
+  return { questionId, sessionId, unitId, content, tone };
 }
 
 // 새 질문이면 저장하고, 같은 질문 ID가 다시 왔으면 저장된 상태를 보고 이 요청이 할 일을 정한다.
@@ -142,6 +145,7 @@ function markError(questionId: string) {
 // 답을 저장하면 요약에 쓸 수 있게 질문 원문과 답을 함께 돌려준다.
 export async function answerQuestion(
   questionId: string,
+  tone: AnswerTone,
   onText: (text: string) => void,
 ): Promise<{ status: "ok"; question: string; answer: string } | { status: "error" }> {
   const db = getDb();
@@ -182,7 +186,7 @@ export async function answerQuestion(
     let reply: string;
     try {
       reply = await streamAnswer(
-        { unitContent: asked.unitContent, history, question: asked.question, pastQuestions },
+        { unitContent: asked.unitContent, history, question: asked.question, pastQuestions, tone },
         onText,
       );
     } catch (error) {

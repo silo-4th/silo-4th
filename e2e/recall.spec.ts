@@ -164,6 +164,7 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   await expect(screen.getByText("1 / 3")).toBeVisible();
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await card.getByRole("button", { name: "다음 문제" }).click();
 
@@ -173,6 +174,7 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   await expect(screen.getByText("3 / 3")).toBeVisible();
   await card.getByRole("textbox", { name: "빈칸에 들어갈 말" }).fill("HAVING");
   await card.getByRole("button", { name: "애매해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await card.getByRole("button", { name: "결과 보기" }).click();
 
@@ -218,6 +220,7 @@ test("TC-236 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남
   await expect(screen.getByText("1 / 2")).toBeVisible();
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await card.getByRole("button", { name: "다음 문제" }).click();
   await expect(screen.getByText("2 / 2")).toBeVisible();
@@ -229,6 +232,7 @@ test("TC-236 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남
   await expect(screen.getByRole("button", { name: "시작하기" })).toHaveCount(0);
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await card.getByRole("button", { name: "결과 보기" }).click();
 

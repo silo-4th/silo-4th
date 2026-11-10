@@ -5,6 +5,7 @@ import {
   type QuizFlow,
   type QuizFlowEvent,
   advanceQuizFlow,
+  canCheck,
   canSubmit,
   startQuizFlow,
 } from "./quiz-flow";
@@ -23,7 +24,7 @@ function requestOf(flow: QuizFlow) {
 }
 
 describe("퀴즈 풀이 흐름", () => {
-  it("TC-139 객관식 문제에서 답을 내고 확신도를 고르면 채점 대기를 거쳐 해설 단계에서 채점 결과, 정답, 해설, 내가 낸 답을 보여 줘요", () => {
+  it("TC-139 객관식 문제에서 보기와 확신도를 고르고 정답 확인을 누르면 채점 대기를 거쳐 해설 단계에서 채점 결과, 정답, 해설, 내가 낸 답을 보여 줘요", () => {
     const result: AttemptResult = {
       outcome: "graded",
       isCorrect: true,
@@ -33,10 +34,10 @@ describe("퀴즈 풀이 흐름", () => {
     const start = startQuizFlow(mcq);
     expect(start.stage).toBe("problem");
 
-    const answered = run(start, { type: "choose", index: 2 }, { type: "submit" });
-    expect(answered.stage).toBe("confidence");
+    const picked = run(start, { type: "choose", index: 2 }, { type: "pick-confidence", confidence: "sure" });
+    expect(picked.stage).toBe("problem");
 
-    const grading = run(answered, { type: "pick-confidence", confidence: "sure" });
+    const grading = run(picked, { type: "check" });
     expect(grading.stage).toBe("grading");
 
     const explained = run(grading, { type: "graded", result });
@@ -45,30 +46,33 @@ describe("퀴즈 풀이 흐름", () => {
     expect(explained.submitted.chosenIndex).toBe(2);
   });
 
-  it("TC-140 객관식에서 보기를 고르지 않았거나 빈칸과 서술형 답이 비어 있거나 공백뿐이면 답을 낼 수 없어요", () => {
-    const unchosen = startQuizFlow(mcq);
-    expect(canSubmit(unchosen)).toBe(false);
-    expect(run(unchosen, { type: "submit" }).stage).toBe("problem");
+  it("TC-140 객관식에서 보기를 고르지 않았거나 빈칸과 서술형 답이 비어 있거나 공백뿐이면 확신도를 골라도 정답 확인을 할 수 없어요", () => {
+    const sure = { type: "pick-confidence", confidence: "sure" } as const;
+
+    const unchosen = run(startQuizFlow(mcq), sure);
+    expect(canCheck(unchosen)).toBe(false);
+    expect(run(unchosen, { type: "check" }).stage).toBe("problem");
 
     for (const problem of [blank, free]) {
       for (const text of ["", "   \n\t"]) {
-        const empty = run(startQuizFlow(problem), { type: "write", text });
-        expect(canSubmit(empty)).toBe(false);
-        expect(run(empty, { type: "submit" }).stage).toBe("problem");
+        const empty = run(startQuizFlow(problem), sure, { type: "write", text });
+        expect(canCheck(empty)).toBe(false);
+        expect(run(empty, { type: "check" }).stage).toBe("problem");
       }
-      const filled = run(startQuizFlow(problem), { type: "write", text: " 상태 " });
-      expect(canSubmit(filled)).toBe(true);
-      expect(run(filled, { type: "submit" }).stage).toBe("confidence");
+      const filled = run(startQuizFlow(problem), sure, { type: "write", text: " 상태 " });
+      expect(canCheck(filled)).toBe(true);
+      expect(run(filled, { type: "check" }).stage).toBe("grading");
     }
 
-    const chosen = run(startQuizFlow(mcq), { type: "choose", index: 0 });
-    expect(canSubmit(chosen)).toBe(true);
-    expect(run(chosen, { type: "submit" }).stage).toBe("confidence");
+    const chosen = run(startQuizFlow(mcq), sure, { type: "choose", index: 0 });
+    expect(canCheck(chosen)).toBe(true);
+    expect(run(chosen, { type: "check" }).stage).toBe("grading");
   });
 
-  it("TC-141 확신도 단계에서는 확신도를 고르지 않고 채점 대기로 넘어갈 수 없어요", () => {
-    const confidence = run(startQuizFlow(mcq), { type: "choose", index: 1 }, { type: "submit" });
-    expect(confidence.stage).toBe("confidence");
+  it("TC-141 답을 넣었어도 확신도를 고르지 않으면 정답 확인을 할 수 없고, 확신도를 하나 고르면 정답 확인으로 채점 대기에 가요", () => {
+    const chosen = run(startQuizFlow(mcq), { type: "choose", index: 1 });
+    expect(canCheck(chosen)).toBe(false);
+    expect(run(chosen, { type: "check" }).stage).toBe("problem");
 
     const result: AttemptResult = {
       outcome: "graded",
@@ -76,11 +80,13 @@ describe("퀴즈 풀이 흐름", () => {
       answer: { choices: mcq.choices.map((text) => ({ text })), answerIndex: 2 },
       explanation: "해설",
     };
-    expect(run(confidence, { type: "graded", result }).stage).toBe("confidence");
-    expect(run(confidence, { type: "next" }).stage).toBe("confidence");
+    expect(run(chosen, { type: "graded", result }).stage).toBe("problem");
+    expect(run(chosen, { type: "next" }).stage).toBe("problem");
 
     for (const pick of ["sure", "unsure", "guess"] as const) {
-      expect(run(confidence, { type: "pick-confidence", confidence: pick }).stage).toBe("grading");
+      const picked = run(chosen, { type: "pick-confidence", confidence: pick });
+      expect(canCheck(picked)).toBe(true);
+      expect(requestOf(run(picked, { type: "check" })).confidence).toBe(pick);
     }
   });
 
@@ -103,10 +109,10 @@ describe("퀴즈 풀이 흐름", () => {
 
   it("TC-143 채점 대기의 풀이 저장 요청 본문에 문제를 시작할 때 만든 풀이 ID, 낸 답, 확신도, 힌트를 봤는지가 담겨요", () => {
     const start = startQuizFlow(blank);
-    const answer = [{ type: "write", text: "useState" }, { type: "submit" }] as const;
-    const pick = { type: "pick-confidence", confidence: "unsure" } as const;
+    const answer = [{ type: "write", text: "useState" }, { type: "pick-confidence", confidence: "unsure" }] as const;
+    const check = { type: "check" } as const;
 
-    const withHint = run(start, { type: "show-hint" }, ...answer, pick);
+    const withHint = run(start, { type: "show-hint" }, ...answer, check);
     expect(requestOf(withHint)).toEqual({
       attemptId: start.attemptId,
       problemId: blank.id,
@@ -117,7 +123,7 @@ describe("퀴즈 풀이 흐름", () => {
       dontKnow: false,
     });
 
-    const withoutHint = run(start, ...answer, pick);
+    const withoutHint = run(start, ...answer, check);
     expect(requestOf(withoutHint).hintUsed).toBe(false);
   });
 
@@ -125,8 +131,8 @@ describe("퀴즈 풀이 흐름", () => {
     const grading = run(
       startQuizFlow(mcq),
       { type: "choose", index: 3 },
-      { type: "submit" },
       { type: "pick-confidence", confidence: "guess" },
+      { type: "check" },
     );
     if (grading.stage !== "grading") throw new Error("채점 대기가 아니에요.");
     const request = grading.request;
@@ -152,8 +158,8 @@ describe("퀴즈 풀이 흐름", () => {
     const grading = run(
       startQuizFlow(free),
       { type: "write", text: "상태가 바뀌면 다시 그려요" },
-      { type: "submit" },
       { type: "pick-confidence", confidence: "sure" },
+      { type: "check" },
     );
     const result: AttemptResult = {
       outcome: "ungraded",

@@ -1,5 +1,6 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
+import type { AnswerTone } from "@/lib/answer-tone";
 import { env } from "@/lib/env";
 import { anthropic } from "./client";
 
@@ -45,6 +46,14 @@ const ANSWER_SYSTEM = `학습자가 아래 단원을 읽다가 질문했다. 단
 - 단원에 없는 내용을 단원에 있는 것처럼 말하지 않는다.
 - 앞 대화의 답이나 과거 질문 요약이 단원 내용과 다르면 단원 내용을 따르고, 앞 답이 틀렸다고 짧게 짚는다.`;
 
+// 디자인 시안의 말투 지시문이다. 기본 말투는 위 답변 지시를 그대로 쓰도록 지시문을 두지 않는다.
+const TONE_INSTRUCTIONS: Record<Exclude<AnswerTone, "default">, string> = {
+  mz: "20대 친구에게 말하듯 가볍고 짧게 답한다. 음슴체(~임, ~함)와 가벼운 유행어를 조금 섞고, 이모지는 한 개 이하로 쓴다.",
+  teacher: "차분한 선생님처럼 합쇼체(~습니다)로 답한다. 개념, 예시, 정리 순서로 수업하듯 설명한다.",
+  feeling: "먼저 학습자의 마음에 공감하고 격려한 뒤 따뜻한 해요체로 설명한다. 감정을 드러내는 이모지를 쓴다.",
+  thinking: "결론부터 말하고, 짧고 논리적인 해요체로 군더더기 없이 답한다.",
+};
+
 // 답변 AI가 "11/5에도 물어보셨어요"라고 알릴 수 있게, 학습자가 겪은 한국 시간 날짜로 적는다.
 const askedDate = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" });
 
@@ -59,7 +68,14 @@ export async function streamAnswer(
     history,
     question,
     pastQuestions,
-  }: { unitContent: string; history: Anthropic.MessageParam[]; question: string; pastQuestions: PastQuestion[] },
+    tone,
+  }: {
+    unitContent: string;
+    history: Anthropic.MessageParam[];
+    question: string;
+    pastQuestions: PastQuestion[];
+    tone: AnswerTone;
+  },
   onText: (text: string) => void,
 ) {
   const abort = new AbortController();
@@ -83,6 +99,7 @@ export async function streamAnswer(
           { type: "text", text: `<unit>\n${unitContent}\n</unit>`, cache_control: { type: "ephemeral" } },
           // 질문마다 달라지므로 단원 본문의 캐시 지점 뒤에 둔다.
           ...(pastQuestions.length > 0 ? [{ type: "text" as const, text: pastQuestionsBlock(pastQuestions) }] : []),
+          ...(tone === "default" ? [] : [{ type: "text" as const, text: toneBlock(tone) }]),
         ],
         messages: [...history, { role: "user", content: question }],
       },
@@ -114,4 +131,8 @@ export async function streamAnswer(
 function pastQuestionsBlock(pastQuestions: PastQuestion[]) {
   const items = pastQuestions.map(({ summary, askedAt }) => `- ${askedDate.format(askedAt)} · ${summary}`).join("\n");
   return `학습자가 전에 같은 개념이나 비슷한 내용으로 물었던 질문의 요약이다. 줄 앞의 날짜는 물어본 날이다. 이어지는 질문이면 참고해 답한다.\n<past_questions>\n${items}\n</past_questions>`;
+}
+
+function toneBlock(tone: Exclude<AnswerTone, "default">) {
+  return `학습자가 고른 답변 말투다. 이 말투로 답하되, 답의 내용과 정확성은 그대로 지킨다.\n<tone>\n${TONE_INSTRUCTIONS[tone]}\n</tone>`;
 }
