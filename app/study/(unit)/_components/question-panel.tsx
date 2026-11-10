@@ -17,10 +17,12 @@ import {
   saveAnswerTone,
   subscribeAnswerTone,
 } from "@/lib/answer-tone";
+import type { SelectionQuestion } from "@/lib/drag-menu";
 import type { SessionSummary, SessionTurn } from "@/lib/question-sessions";
 import { BetaNotice } from "./beta-notice";
 import { HistoryMenu } from "./history-menu";
 import { QuickIcon, type QuickIconKind } from "./quick-icon";
+import { type SelectionAsk, useSelectionAsk } from "./selection-ask";
 import { ToneMenu } from "./tone-menu";
 
 const SLOW_MS = 5_000;
@@ -41,7 +43,15 @@ const QUICK_QUESTIONS: { title: string; desc: string; icon: QuickIconKind; beta?
   { title: "헷갈리는 개념 비교해줘", desc: "WHERE와 HAVING처럼", icon: "compare", beta: true },
 ];
 
-type Question = { id: string; sessionId: string; unitId: string; content: string };
+// 드래그 메뉴로 보낸 질문은 드래그한 문장과 그 절의 개념을 함께 보낸다.
+type Question = {
+  id: string;
+  sessionId: string;
+  unitId: string;
+  content: string;
+  selectedText?: string;
+  sectionConceptId?: string;
+};
 
 type Turn = Question &
   (
@@ -77,8 +87,19 @@ async function fetchJson<T>(url: string): Promise<T | undefined> {
 }
 
 // 단원이 없는 예전 질문은 다시 보낼 때 지금 열린 단원으로 묻는다.
-function savedTurn(sessionId: string, openedUnitId: string, { questionId, unitId, content, answer }: SessionTurn): Turn {
-  const question = { id: questionId, sessionId, unitId: unitId ?? openedUnitId, content };
+function savedTurn(
+  sessionId: string,
+  openedUnitId: string,
+  { questionId, unitId, content, selectedText, sectionConceptId, answer }: SessionTurn,
+): Turn {
+  const question = {
+    id: questionId,
+    sessionId,
+    unitId: unitId ?? openedUnitId,
+    content,
+    selectedText: selectedText ?? undefined,
+    sectionConceptId: sectionConceptId ?? undefined,
+  };
   return answer === null ? { ...question, status: "failed", reason: "failed" } : { ...question, status: "answered", answer };
 }
 
@@ -161,8 +182,8 @@ export function QuestionPanel({
     // 대화 기록 메뉴에서 다시 받은 목록은 메뉴에만 보여 주고, 학습자가 보던 대화는 바꾸지 않는다.
     if (openedSession) return;
     const remembered = readOpenedSession();
-    const sessionId = saved.find(({ id }) => id === remembered)?.id ?? saved[0]?.id;
-    if (sessionId) openSession(sessionId);
+    const restored = saved.find(({ id }) => id === remembered)?.id ?? saved[0]?.id;
+    if (restored) openSession(restored);
     else startSession();
   });
 
@@ -209,8 +230,8 @@ export function QuestionPanel({
       () => update(question.id, (turn) => (turn.status === "sending" && !turn.answer ? { ...turn, slow: true } : turn)),
       SLOW_MS,
     );
-    const { id: questionId, sessionId, unitId: askedUnitId, content } = question;
-    const result = await askQuestion({ questionId, sessionId, unitId: askedUnitId, content, tone }, (answer) =>
+    const { id: questionId, unitId: askedUnitId, ...asked } = question;
+    const result = await askQuestion({ ...asked, questionId, unitId: askedUnitId, tone }, (answer) =>
       update(question.id, (turn) => (turn.status === "sending" ? { ...turn, answer } : turn)),
     );
     clearTimeout(slow);
@@ -244,16 +265,33 @@ export function QuestionPanel({
   }
 
   function sendQuestion(content: string) {
-    if (!content || !openedSession) return;
-    void ask({ id: crypto.randomUUID(), sessionId: openedSession, unitId, content });
+    if (content && openedSession) startQuestion(openedSession, content);
+  }
+
+  function startQuestion(sessionId: string, content: string, selection?: SelectionQuestion) {
+    void ask({
+      id: crypto.randomUUID(),
+      sessionId,
+      unitId,
+      content,
+      selectedText: selection?.text,
+      sectionConceptId: selection?.conceptId ?? undefined,
+    });
     // 질문하면 서버에 남는 대화가 되므로, 목록을 받지 못한 동안 연 대화도 이제 기억한다.
-    rememberOpenedSession(openedSession);
+    rememberOpenedSession(sessionId);
     // 마지막으로 질문한 세션을 맨 위로 올린다. 처음 질문한 세션은 이 질문이 제목이 된다.
     setSessions((previous) => [
-      { id: openedSession, title: previous.find(({ id }) => id === openedSession)?.title ?? content },
-      ...previous.filter(({ id }) => id !== openedSession),
+      { id: sessionId, title: previous.find(({ id }) => id === sessionId)?.title ?? content },
+      ...previous.filter(({ id }) => id !== sessionId),
     ]);
   }
+
+  // 보낼 수 없는 동안에는 메뉴 버튼이 막혀 있다.
+  const askSelection = useEffectEvent((selectionAsk: SelectionAsk) => {
+    if (openedSession) startQuestion(openedSession, selectionAsk.content, selectionAsk.selection);
+  });
+  const selectionAsks = useSelectionAsk();
+  useEffect(() => selectionAsks.listen((selectionAsk) => askSelection(selectionAsk)), [selectionAsks]);
 
   // 한글을 조합하는 중에 누른 Enter는 글자를 확정하는 입력이라 보내지 않는다.
   // 보낼 수 없을 때는 보내지 않고, 쓰던 질문도 지우지 않는다.
@@ -288,6 +326,10 @@ export function QuestionPanel({
   const load = openedSession === undefined ? "loading" : sessionLoads[openedSession];
   // 시안처럼 쓴 글이 없거나, 지난 대화를 받는 중이거나, 이 대화의 답을 받는 중이면 보내지 않는다.
   const canSend = hasDraft && load !== "loading" && !shown.some(({ status }) => status === "sending");
+  // 드래그 메뉴 버튼도 입력창처럼 막는다. 지난 대화를 받지 못했을 때도 막아, 보낸 질문이 실패 화면에 가려지지 않게 한다.
+  const canAsk = !load && !shown.some(({ status }) => status === "sending");
+  useEffect(() => selectionAsks.setReady(canAsk), [selectionAsks, canAsk]);
+  useEffect(() => () => selectionAsks.setReady(false), [selectionAsks]);
 
   return (
     <>
@@ -352,9 +394,12 @@ export function QuestionPanel({
                 빈 목록을 두면 .chat의 간격이 하나 더 생겨 빈 대화 인사와 실패 화면이 아래로 밀린다. */}
             {!load && shown.length > 0 && (
               <ol aria-label="대화" className="chat-list">
-                {shown.map(({ id, sessionId, unitId: askedUnitId, content, ...turn }) => (
+                {shown.map(({ id, sessionId, unitId: askedUnitId, content, selectedText, sectionConceptId, ...turn }) => (
                   <Fragment key={id}>
-                    <li className="msg user">{content}</li>
+                    <li className="msg user">
+                      {selectedText && <blockquote className="quote">{selectedText}</blockquote>}
+                      {content}
+                    </li>
                     {turn.status !== "failed" && turn.answer && (
                       <li className="msg bot">
                         <Mascot size={26} />
@@ -386,7 +431,7 @@ export function QuestionPanel({
                             onClick={() => {
                               // 누른 버튼이 사라지므로 포커스를 질문 입력으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
                               input.current?.focus();
-                              void ask({ id, sessionId, unitId: askedUnitId, content });
+                              void ask({ id, sessionId, unitId: askedUnitId, content, selectedText, sectionConceptId });
                             }}
                             className="bubble-retry"
                           >

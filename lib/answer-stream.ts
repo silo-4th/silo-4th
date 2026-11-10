@@ -62,7 +62,15 @@ function deltaText(data: string) {
 }
 
 export async function askQuestion(
-  input: { questionId: string; sessionId: string; unitId: string; content: string; tone: AnswerTone },
+  input: {
+    questionId: string;
+    sessionId: string;
+    unitId: string;
+    content: string;
+    tone: AnswerTone;
+    selectedText?: string;
+    sectionConceptId?: string;
+  },
   onText?: (answer: string) => void,
 ) {
   try {

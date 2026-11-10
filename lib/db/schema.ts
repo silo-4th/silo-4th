@@ -192,6 +192,8 @@ export const message = pgTable(
     seq: integer("seq").notNull(),
     role: text("role", { enum: MESSAGE_ROLES }).notNull(),
     content: text("content").notNull(),
+    // 본문에서 드래그해 물어본 문장이다. 학습자 메시지에만 있고, content에는 메뉴의 질문 문구가 들어간다.
+    selectedText: text("selected_text"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

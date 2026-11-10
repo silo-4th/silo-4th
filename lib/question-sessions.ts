@@ -1,6 +1,13 @@
 export type SessionSummary = { id: string; title: string };
-// answer가 null이면 답을 받지 못한 질문이다.
-export type SessionTurn = { questionId: string; unitId: string | null; content: string; answer: string | null };
+// answer가 null이면 답을 받지 못한 질문이다. selectedText는 본문에서 드래그해 물어본 문장이고, sectionConceptId는 그 문장의 절 개념이다.
+export type SessionTurn = {
+  questionId: string;
+  unitId: string | null;
+  content: string;
+  selectedText: string | null;
+  sectionConceptId: string | null;
+  answer: string | null;
+};
 
 // 마지막으로 질문한 대화가 맨 위에 오고, 제목은 그 대화에서 가장 먼저 보낸 질문이다.
 export function toSessionList(asked: { sessionId: string; content: string; askedAt: Date }[]): SessionSummary[] {

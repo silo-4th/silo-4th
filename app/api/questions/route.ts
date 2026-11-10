@@ -20,6 +20,7 @@ type Send =(event: "delta" | "done" | "error", data?: object) => void;
 const REFUSED: Record<Exclude<Claim["kind"], "answer" | "saved">, number> = {
   pending: 409,
   "unknown-unit": 404,
+  "unknown-section": 400,
   "not-yours": 403,
 };
 
