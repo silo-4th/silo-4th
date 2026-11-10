@@ -80,6 +80,29 @@ describe("꺼내 먹기 흐름", () => {
       expect(advanceRecall(result, event)).toBe<RecallFlow>(result);
     }
   });
+
+  it("TC-289 꺼내 먹기 문제 단계에서 결과 보기를 누르면 남은 문항을 건너뛴 문항처럼 틀림으로 두고 문항 순서대로 모아 결과 단계로 넘어가요", () => {
+    const first = advanceRecall(startRecall(setOf("read_no_question", "read_no_question", "asked")), { type: "start" });
+    const second = advanceRecall(first, { type: "answered", submitted: submitted("problem-1"), result: graded });
+
+    const fromSecond = advanceRecall(second, { type: "finish" });
+    expect(fromSecond.stage).toBe("result");
+    if (fromSecond.stage !== "result") throw new Error("결과 단계여야 한다.");
+    expect(fromSecond.answers).toEqual([
+      { itemId: "item-1", kind: "answered", submitted: submitted("problem-1"), result: graded },
+      { itemId: "item-2", kind: "skipped" },
+      { itemId: "item-3", kind: "skipped" },
+    ]);
+
+    const fromFirst = advanceRecall(first, { type: "finish" });
+    expect(fromFirst.stage).toBe("result");
+    if (fromFirst.stage !== "result") throw new Error("결과 단계여야 한다.");
+    expect(fromFirst.answers).toEqual([
+      { itemId: "item-1", kind: "skipped" },
+      { itemId: "item-2", kind: "skipped" },
+      { itemId: "item-3", kind: "skipped" },
+    ]);
+  });
 });
 
 describe("꺼내 먹기 이어 풀기", () => {

@@ -122,7 +122,7 @@ test("TC-202 어제 학습한 학습자가 오늘 처음 학습 화면에 들어
   await expect(screen.getByText("넘어감", { exact: true })).toHaveCount(2);
   await expect(screen.getByText("물어봄", { exact: true })).toHaveCount(1);
   await expect(screen.getByRole("button", { name: "시작하기" })).toBeVisible();
-  await expect(screen.getByRole("button", { name: "오늘은 건너뛸게요" })).toBeVisible();
+  await expect(screen.getByRole("button", { name: "내일 꺼내 먹을래요" })).toBeVisible();
   expect((await setTimes(seeded.setId))?.shownAt).not.toBeNull();
 });
 
@@ -147,11 +147,53 @@ test("TC-203 띄울 세트가 없거나 세트 준비 요청이 실패한 학습
   await expect(recallScreen(page)).toHaveCount(0);
 });
 
-test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이가 문항 ID와 함께 저장되고, 마지막 문항 뒤 결과 단계로 넘어가며 시작과 완료 시각이 남아요", async ({ page, learnerId }) => {
+test("TC-292 꺼내 먹기에서 보기와 확신도를 고르고 다음을 누르면 해설 없이 다음 문제로 가고, 빈칸 문항을 건너뛴 뒤 마지막 문항에서 결과 보기를 누르면 건너뛴 문항까지 풀이가 저장되고 시작과 완료 시각이 남아요", async ({ page, learnerId }) => {
   const { setId, unit, items } = await seedSet(learnerId, [
     { format: "mcq", reason: "read_no_question" },
-    { format: "free", reason: "read_no_question" },
     { format: "blank", reason: "read_no_question" },
+    { format: "blank", reason: "read_no_question" },
+  ]);
+
+  await page.goto(`/study/${unit.id}`);
+  const screen = recallScreen(page);
+  await screen.getByRole("button", { name: "시작하기" }).click();
+
+  const progress = screen.getByRole("progressbar");
+  await expect(progress).toHaveAttribute("aria-valuenow", "1");
+  await expect(screen.getByRole("button", { name: "힌트" })).toHaveCount(0);
+  await expect(screen.getByRole("button", { name: "이 문제 건너뛰기" })).toHaveCount(0);
+  await screen.getByRole("radio", { name: "HAVING" }).check();
+  await screen.getByRole("button", { name: "확실해요" }).click();
+  await screen.getByRole("button", { name: "다음", exact: true }).click();
+
+  await expect(progress).toHaveAttribute("aria-valuenow", "2");
+  await expect(screen.getByRole("region", { name: "채점 결과와 해설" })).toHaveCount(0);
+  await expect(screen.getByRole("button", { name: "힌트" })).toHaveCount(0);
+  await screen.getByRole("button", { name: "이 문제 건너뛰기" }).click();
+
+  await expect(progress).toHaveAttribute("aria-valuenow", "3");
+  await screen.getByRole("textbox", { name: "빈칸에 들어갈 말" }).fill("HAVING");
+  await screen.getByRole("button", { name: "애매해요" }).click();
+  await screen.getByRole("button", { name: "결과 보기" }).click();
+
+  await expect(screen.getByRole("heading", { name: "3개 중 1개를 틀렸어요" })).toBeVisible();
+
+  const attempts = await db
+    .select({ recallItemId: quizAttempt.recallItemId })
+    .from(quizAttempt)
+    .where(eq(quizAttempt.learnerId, learnerId));
+  expect(attempts.map((row) => row.recallItemId).sort()).toEqual(items.map((item) => item.id).sort());
+  await expect.poll(async () => (await setTimes(setId))?.completedAt).not.toBeNull();
+  const times = await setTimes(setId);
+  expect(times?.startedAt).not.toBeNull();
+  expect(times?.postponedAt).toBeNull();
+});
+
+test("TC-293 꺼내 먹기 두 번째 문제에서 결과 보기를 누르면 결과 화면이 열리고 풀지 않은 문항은 틀렸어요로 보이며, 완료 시각이 남아 다시 들어와도 꺼내 먹기가 뜨지 않아요", async ({ page, learnerId }) => {
+  const { setId, unit, items } = await seedSet(learnerId, [
+    { format: "mcq", reason: "read_no_question" },
+    { format: "mcq", reason: "read_no_question" },
+    { format: "mcq", reason: "read_no_question" },
   ]);
   const [first, second, third] = items;
   if (!first || !second || !third) throw new Error("문항이 3개여야 한다.");
@@ -160,43 +202,45 @@ test("TC-204 시작하기를 누르고 문항을 풀거나 건너뛰면 풀이�
   const screen = recallScreen(page);
   await screen.getByRole("button", { name: "시작하기" }).click();
 
-  const card = screen.getByRole("region", { name: "퀴즈" });
-  await expect(screen.getByText("1 / 3")).toBeVisible();
-  await card.getByText("HAVING", { exact: true }).click();
-  await card.getByRole("button", { name: "확실해요" }).click();
-  await card.getByRole("button", { name: "정답 확인" }).click();
-  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
-  await card.getByRole("button", { name: "다음 문제" }).click();
+  const progress = screen.getByRole("progressbar");
+  await expect(progress).toHaveAttribute("aria-valuenow", "1");
+  await expect(screen.getByRole("button", { name: "결과 보기" })).toBeVisible();
+  await screen.getByRole("radio", { name: "HAVING" }).check();
+  await screen.getByRole("button", { name: "확실해요" }).click();
+  await screen.getByRole("button", { name: "다음", exact: true }).click();
 
-  await expect(screen.getByText("2 / 3")).toBeVisible();
-  await screen.getByRole("button", { name: "이 문제 건너뛰기" }).click();
+  await expect(progress).toHaveAttribute("aria-valuenow", "2");
+  await screen.getByRole("button", { name: "결과 보기" }).click();
 
-  await expect(screen.getByText("3 / 3")).toBeVisible();
-  await card.getByRole("textbox", { name: "빈칸에 들어갈 말" }).fill("HAVING");
-  await card.getByRole("button", { name: "애매해요" }).click();
-  await card.getByRole("button", { name: "정답 확인" }).click();
-  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
-  await card.getByRole("button", { name: "결과 보기" }).click();
+  await expect(screen.getByRole("heading", { name: "3개 중 2개를 틀렸어요" })).toBeVisible();
+  const cards = screen.getByRole("listitem");
+  await expect(cards).toHaveCount(3);
+  for (const index of [1, 2]) {
+    await expect(cards.nth(index)).toContainText("틀렸어요");
+    await expect(cards.nth(index)).toContainText("HAVING");
+  }
 
-  await expect(screen.getByRole("heading", { name: "3개 중 1개를 틀렸어요" })).toBeVisible();
-
+  await expect.poll(async () => (await setTimes(setId))?.completedAt).not.toBeNull();
   const attempts = await db
-    .select({ recallItemId: quizAttempt.recallItemId })
+    .select({ recallItemId: quizAttempt.recallItemId, confidence: quizAttempt.confidence, isCorrect: quizAttempt.isCorrect })
     .from(quizAttempt)
     .where(eq(quizAttempt.learnerId, learnerId));
-  expect(attempts.map((row) => row.recallItemId).sort()).toEqual([first.id, third.id].sort());
-  await expect.poll(async () => (await setTimes(setId))?.completedAt).not.toBeNull();
-  const times = await setTimes(setId);
-  expect(times?.startedAt).not.toBeNull();
-  expect(times?.postponedAt).toBeNull();
+  expect(attempts.map((row) => row.recallItemId).sort()).toEqual([first.id, second.id, third.id].sort());
+  for (const id of [second.id, third.id]) {
+    expect(attempts.find((row) => row.recallItemId === id)).toMatchObject({ confidence: "guess", isCorrect: false });
+  }
+
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: unit.title, exact: true })).toBeVisible();
+  await expect(screen).toHaveCount(0);
 });
 
-test("TC-205 오늘은 건너뛸게요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
+test("TC-295 꺼내 먹기 입구에서 내일 꺼내 먹을래요를 누르면 세트에 미룬 시각이 저장되고 학습 화면으로 가요", async ({ page, learnerId }) => {
   const { setId, unit } = await seedSet(learnerId, [{ format: "mcq", reason: "read_no_question" }]);
 
   await page.goto(`/study/${unit.id}`);
   const screen = recallScreen(page);
-  await screen.getByRole("button", { name: "오늘은 건너뛸게요" }).click();
+  await screen.getByRole("button", { name: "내일 꺼내 먹을래요" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: unit.title, exact: true })).toBeVisible();
   await expect(screen).toHaveCount(0);
@@ -204,7 +248,7 @@ test("TC-205 오늘은 건너뛸게요를 누르면 세트에 미룬 시각이 �
   expect((await setTimes(setId))?.startedAt).toBeNull();
 });
 
-test("TC-236 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남은 문항부터 이어 풀고, 결과에 앞서 푼 문항도 보이며 완료 시각이 남아요", async ({ page, learnerId }) => {
+test("TC-296 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남은 문항부터 이어 풀고, 결과에 앞서 푼 문항도 지문과 함께 보이며 완료 시각이 남아요", async ({ page, learnerId }) => {
   const { setId, unit, items } = await seedSet(learnerId, [
     { format: "mcq", reason: "read_no_question" },
     { format: "mcq", reason: "read_no_question" },
@@ -216,29 +260,25 @@ test("TC-236 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남
   const screen = recallScreen(page);
   await screen.getByRole("button", { name: "시작하기" }).click();
 
-  const card = screen.getByRole("region", { name: "퀴즈" });
-  await expect(screen.getByText("1 / 2")).toBeVisible();
-  await card.getByText("HAVING", { exact: true }).click();
-  await card.getByRole("button", { name: "확실해요" }).click();
-  await card.getByRole("button", { name: "정답 확인" }).click();
-  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
-  await card.getByRole("button", { name: "다음 문제" }).click();
-  await expect(screen.getByText("2 / 2")).toBeVisible();
+  const progress = screen.getByRole("progressbar");
+  await expect(progress).toHaveAttribute("aria-valuenow", "1");
+  await screen.getByRole("radio", { name: "HAVING" }).check();
+  await screen.getByRole("button", { name: "확실해요" }).click();
+  await screen.getByRole("button", { name: "다음", exact: true }).click();
+  await expect(progress).toHaveAttribute("aria-valuenow", "2");
   await expect.poll(async () => (await setTimes(setId))?.startedAt).not.toBeNull();
 
   await page.reload();
 
-  await expect(screen.getByText("2 / 2")).toBeVisible();
+  await expect(progress).toHaveAttribute("aria-valuenow", "2");
   await expect(screen.getByRole("button", { name: "시작하기" })).toHaveCount(0);
-  await card.getByText("HAVING", { exact: true }).click();
-  await card.getByRole("button", { name: "확실해요" }).click();
-  await card.getByRole("button", { name: "정답 확인" }).click();
-  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
-  await card.getByRole("button", { name: "결과 보기" }).click();
+  await screen.getByRole("radio", { name: "HAVING" }).check();
+  await screen.getByRole("button", { name: "확실해요" }).click();
+  await screen.getByRole("button", { name: "결과 보기" }).click();
 
   await expect(screen.getByRole("heading", { name: "2개 모두 맞혔어요" })).toBeVisible();
-  await expect(screen.getByText(`1. ${first.conceptTitle}`)).toBeVisible();
-  await expect(screen.getByText(`2. ${second.conceptTitle}`)).toBeVisible();
+  await expect(screen.getByText(`1. ${PROBLEMS.mcq.stem}`)).toBeVisible();
+  await expect(screen.getByText(`2. ${PROBLEMS.mcq.stem}`)).toBeVisible();
 
   const attempts = await db
     .select({ recallItemId: quizAttempt.recallItemId })
