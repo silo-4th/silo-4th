@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { BrandHeader } from "@/app/_components/brand-header";
 import { requireLearner } from "@/lib/auth";
-import { AccountMenu } from "./_components/account-menu";
+import { AccountMenu } from "@/app/_components/account-menu";
 import { RecallGate } from "./_components/recall-gate";
 import { StudyPanel } from "./_components/study-panel";
 import { UnitSwitch } from "./_components/unit-switch";

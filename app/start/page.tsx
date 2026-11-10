@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { AccountMenu } from "@/app/_components/account-menu";
 import { BrandHeader } from "@/app/_components/brand-header";
 import { Mascot } from "@/app/_components/mascot";
 import { getCurrentLearner } from "@/lib/auth";
@@ -10,7 +11,11 @@ import { StartForm } from "./start-form";
 export default function StartPage() {
   return (
     <>
-      <BrandHeader />
+      <BrandHeader>
+        <Suspense>
+          <StartAccount />
+        </Suspense>
+      </BrandHeader>
       <main className="min-h-[calc(100vh-64px)] bg-bg px-6 pt-8 pb-14 max-[640px]:px-3 max-[640px]:pt-4 max-[640px]:pb-10 [@media(max-height:760px)_and_(min-width:861px)]:py-3">
         <section className="mx-auto max-w-[680px] overflow-hidden rounded-lg border border-line bg-white shadow-card">
           <div className="min-h-[440px] [@media(max-height:760px)_and_(min-width:861px)]:min-h-0 px-5 pt-8 pb-12 min-[521px]:px-10 min-[521px]:pt-10 min-[521px]:pb-14">
@@ -22,6 +27,11 @@ export default function StartPage() {
       </main>
     </>
   );
+}
+
+async function StartAccount() {
+  const learner = await getCurrentLearner();
+  return learner && <AccountMenu name={learner.name} light />;
 }
 
 async function StartGate() {
