@@ -16,6 +16,8 @@ import think from "@/app/_assets/mascot-o.png";
 import { ResultChipLabel } from "@/app/_components/result-chip";
 import { type Solved, sendAttempt, shownStem } from "@/lib/quiz-card";
 import {
+  RECALL_PREP_STEPS,
+  type PrepStepState,
   type RecallAnswer,
   type RecallFlow,
   type RecallFlowEvent,
@@ -23,6 +25,7 @@ import {
   entryOf,
   isLastProblem,
   openTodayRecall,
+  prepStepsAt,
   recordRecallEvent,
   skippedRequest,
   startRecall,
@@ -81,12 +84,10 @@ export function RecallGate({ children, header }: { children: ReactNode; header: 
 
   if (gate.stage === "study") return children;
   return (
-    <main aria-label="꺼내 먹기" aria-busy={gate.stage === "checking"} className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-bg text-ink">
+    <main aria-label="꺼내 먹기" className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-bg text-ink">
       {header}
       {gate.stage === "checking" ? (
-        <p role="status" className="grid flex-1 place-items-center text-[15px] font-semibold text-gray">
-          어제 공부한 내용을 챙기고 있어요
-        </p>
+        <Preparing />
       ) : (
         <RecallScreen set={gate.set} onClose={() => setGate({ stage: "study" })} onLeave={leave} />
       )}
@@ -240,23 +241,90 @@ function Steps({ flow, handoff }: { flow: ProblemFlow; handoff: boolean }) {
   );
 }
 
-function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => void; onLater: () => void }) {
-  // 시안처럼 질문 없이 넘어간 개념을 먼저 보여 준다.
-  const rows = [...entryOf(set.items).rows].sort((a, b) => Number(a.reason === "물어봄") - Number(b.reason === "물어봄"));
+// 세트는 10초 넘게 걸려 만들어진다. 입구와 같은 자리에 준비 단계를 두어, 준비가 끝나면 같은 상자가 개념 목록으로 바뀌어 보인다.
+function Preparing() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const timers = RECALL_PREP_STEPS.flatMap(({ doneAtMs }) =>
+      doneAtMs === undefined ? [] : [setTimeout(() => setElapsed(doneAtMs), doneAtMs)],
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  const states = prepStepsAt(elapsed);
+  return (
+    <div className="recall">
+      <section className="recall-frame">
+        <div className="recall-body">
+          <div role="status" className="recall-col">
+            <IntroHead title="어제 공부한 내용을 챙기고 있어요" />
+            <ol className="recall-list recall-list--info">
+              {RECALL_PREP_STEPS.map(({ label }, index) => (
+                <PrepStep key={label} label={label} state={states[index] ?? "wait"} />
+              ))}
+            </ol>
+            <IntroActions />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const PREP_SPOKEN: Record<PrepStepState, string> = { done: " 완료", now: " 진행 중", wait: "" };
+
+function PrepStep({ label, state }: { label: string; state: PrepStepState }) {
+  return (
+    <li aria-atomic className={`recall-row recall-prep-step ${state}`}>
+      <span aria-hidden className="recall-prep-mark">
+        {state === "done" && <Check size={12} strokeWidth={3} />}
+      </span>
+      {label}
+      <span className="sr-only">{PREP_SPOKEN[state]}</span>
+    </li>
+  );
+}
+
+// 꺼내 먹기를 마치면 쿠키를 받는 이야기가 여기서 시작한다. 시무룩한 입은 원본 위에 덮는 조각이라 두 그림 모두 다시 압축하지 않는다.
+function IntroHead({ title, sub }: { title: string; sub?: string }) {
   return (
     <>
       <span aria-hidden className="mascot recall-intro-art">
         <span className="recall-want-bob">
-          <Image src={cookieWant} alt="" width={136} height={110} draggable={false} />
-          <Image src={cookieWantFrown} alt="" width={136} height={110} draggable={false} className="recall-want-frown" />
+          <Image src={cookieWant} alt="" width={136} height={110} draggable={false} unoptimized loading="eager" />
+          <Image src={cookieWantFrown} alt="" width={136} height={110} draggable={false} unoptimized className="recall-want-frown" />
           <i className="recall-want-droop l" />
           <i className="recall-want-droop r" />
           <i className="mascot-lid l" />
           <i className="mascot-lid r" />
         </span>
       </span>
-      <h1 className="recall-title recall-intro-center">지난번에 공부한 것 중 {rows.length}개를 꺼내 볼게요</h1>
-      <p className="recall-sub recall-intro-center">{rows.length}개를 꺼내 보면 플러키에게 쿠키를 줄 수 있어요</p>
+      <h1 className="recall-title recall-intro-center">{title}</h1>
+      <p className="recall-sub recall-intro-center min-h-[1.6em]">{sub}</p>
+    </>
+  );
+}
+
+// 준비 중에는 버튼을 숨기되 자리는 남겨, 준비가 끝나 버튼이 나타나도 아래가 밀리지 않는다.
+function IntroActions({ onStart, onLater }: { onStart?: () => void; onLater?: () => void }) {
+  const ready = onStart !== undefined;
+  return (
+    <div aria-hidden={!ready} className="recall-cta recall-intro-cta">
+      <button type="button" onClick={onStart} tabIndex={ready ? undefined : -1} className="btn btn-dark btn-lg btn-block">
+        시작하기
+      </button>
+      <button type="button" onClick={onLater} tabIndex={ready ? undefined : -1} className="recall-later">
+        내일 꺼내 먹을래요
+      </button>
+    </div>
+  );
+}
+
+function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => void; onLater: () => void }) {
+  // 시안처럼 질문 없이 넘어간 개념을 먼저 보여 준다.
+  const rows = [...entryOf(set.items).rows].sort((a, b) => Number(a.reason === "물어봄") - Number(b.reason === "물어봄"));
+  return (
+    <>
+      <IntroHead title={`지난번에 공부한 것 중 ${rows.length}개를 꺼내 볼게요`} sub={`${rows.length}개를 꺼내 보면 플러키에게 쿠키를 줄 수 있어요`} />
       <ul className="recall-list recall-list--info">
         {rows.map((row, index) => (
           <li key={row.id} className="recall-row recall-row-in" style={{ animationDelay: `${index * 90}ms` }}>
@@ -266,14 +334,7 @@ function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => v
           </li>
         ))}
       </ul>
-      <div className="recall-cta">
-        <button type="button" onClick={onStart} className="btn btn-dark btn-lg btn-block">
-          시작하기
-        </button>
-        <button type="button" onClick={onLater} className="recall-later">
-          내일 꺼내 먹을래요
-        </button>
-      </div>
+      <IntroActions onStart={onStart} onLater={onLater} />
     </>
   );
 }

@@ -4,6 +4,7 @@ import { requireLearner } from "@/lib/auth";
 import { AccountMenu } from "./_components/account-menu";
 import { RecallGate } from "./_components/recall-gate";
 import { StudyPanel } from "./_components/study-panel";
+import { UnitSwitch } from "./_components/unit-switch";
 
 export default function UnitLayout({ children }: LayoutProps<"/study">) {
   return (
@@ -17,7 +18,9 @@ export default function UnitLayout({ children }: LayoutProps<"/study">) {
       }
     >
       <div className="relative flex h-screen">
-        <div className="flex min-w-0 flex-1">{children}</div>
+        <div className="flex min-w-0 flex-1">
+          <UnitSwitch>{children}</UnitSwitch>
+        </div>
         <Suspense>
           <LearnerStudyPanel />
         </Suspense>

@@ -288,3 +288,39 @@ test("TC-296 꺼내 먹기를 푸는 중에 새로고침하면 입구 없이 남
   await expect.poll(async () => (await setTimes(setId))?.completedAt).not.toBeNull();
   expect((await setTimes(setId))?.startedAt).not.toBeNull();
 });
+
+test("TC-276 꺼내 먹기 세트를 준비하는 동안 제목 아래에 준비 단계 3줄이 보이고, 준비가 끝나면 그 자리에 꺼낼 개념 목록과 시작하기가 보여요", async ({ page, learnerId }) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let seeded: Awaited<ReturnType<typeof seedSet>> | undefined;
+  await page.route(PREPARE_PATH, async (route) => {
+    seeded = await seedSet(learnerId, [
+      { format: "mcq", reason: "read_no_question" },
+      { format: "free", reason: "asked" },
+    ]);
+    await held;
+    return route.fulfill({ status: 204 });
+  });
+
+  const unit = await firstUnit();
+  await page.goto(`/study/${unit.id}`);
+  const screen = recallScreen(page);
+  const start = screen.getByRole("button", { name: "시작하기" });
+  await expect(screen.getByText("어제 공부한 내용을 챙기고 있어요")).toBeVisible();
+  for (const step of ["지난 공부 기록 살펴보기", "꺼내 볼 개념 3개 고르기", "문제 3개 만들기"]) {
+    await expect(screen.getByText(step)).toBeVisible();
+  }
+  await expect(start).toHaveCount(0);
+
+  release();
+
+  await expect(start).toBeVisible();
+  await expect(screen.getByRole("button", { name: "내일 꺼내 먹을래요" })).toBeVisible();
+  await expect(screen.getByText("지난 공부 기록 살펴보기")).toHaveCount(0);
+  if (!seeded) throw new Error("세트를 넣지 못했다.");
+  for (const { conceptTitle } of seeded.items) {
+    await expect(screen.getByText(conceptTitle, { exact: true })).toBeVisible();
+  }
+});

@@ -1,10 +1,13 @@
 "use client";
 
 import { House, X } from "lucide-react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import mascot from "@/app/_assets/mascot.png";
 import { Burst } from "@/app/_components/burst";
+import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { ResultChipLabel } from "@/app/_components/result-chip";
@@ -34,6 +37,7 @@ import {
   settleQuizSet,
   startQuizSet,
 } from "@/lib/quiz-tab";
+import { BetaNotice } from "./beta-notice";
 import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
@@ -143,7 +147,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
           </span>
           <span className="peek-clip">
             <span className="peek-body">
-              <Mascot size={104} />
+              <Mascot size={104} mood="zip" hoverMood="cat" />
             </span>
           </span>
         </button>
@@ -203,43 +207,14 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
               if (!next.betaNotice) tabs.current.get("quiz")?.focus();
             }}
           />
-          <BetaNotice open={quiz.betaNotice} onClose={() => sendQuiz({ type: "dismiss" })} />
+          <BetaNotice open={quiz.betaNotice} onClose={() => sendQuiz({ type: "dismiss" })}>
+            지금은 하루에 한 묶음만 풀 수 있어요.
+            <br />
+            새벽 4시가 지나면 새 문제를 풀 수 있어요.
+          </BetaNotice>
         </div>
       </aside>
     </>
-  );
-}
-
-// 확인이나 Esc로 닫으면 close 이벤트가 오고, 브라우저가 모달을 열기 전 버튼으로 포커스를 돌려준다.
-function BetaNotice({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (open && !dialog?.open) dialog?.showModal();
-    if (!open && dialog?.open) dialog.close();
-  }, [open]);
-
-  return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="beta-notice-title"
-      onClose={onClose}
-      className="m-auto w-[min(320px,calc(100%-32px))] rounded-2xl bg-white p-6 text-center text-ink backdrop:bg-[rgba(18,19,20,0.35)]"
-    >
-      <h2 id="beta-notice-title" className="text-[19px] font-bold tracking-tight">
-        아직 베타 단계예요
-      </h2>
-      <p className="mt-2 text-[13.5px] leading-relaxed text-gray">
-        지금은 하루에 한 묶음만 풀 수 있어요.
-        <br />
-        새벽 4시가 지나면 새 문제를 풀 수 있어요.
-      </p>
-      <form method="dialog" className="mt-5">
-        <button type="submit" className="btn btn-dark btn-lg btn-block">
-          확인
-        </button>
-      </form>
-    </dialog>
   );
 }
 
@@ -269,7 +244,7 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
     backPending.current = false;
     focusOnMount(element);
   });
-  const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
+  const waiting = tab.stage === "loading" || tab.stage === "resuming";
   return (
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
     // 지난 문제의 제목 줄은 위에 붙어 있으므로, 키보드로 올라갈 때 그 아래로 스크롤해 포커스가 가려지지 않게 한다.
@@ -290,22 +265,15 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
       )}
       {waiting && (
         <div className="flex justify-center pt-8">
-          <Mascot size={88} spin={tab.stage !== "failed"} />
+          <Mascot size={88} spin />
         </div>
       )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
       <p role="status" className={waiting ? "text-center text-sm text-gray" : "sr-only"}>
         {tab.stage === "loading" && "문제를 만들고 있어요"}
         {tab.stage === "resuming" && "풀던 문제를 불러오고 있어요"}
-        {tab.stage === "failed" && <span className="font-bold text-red">문제를 만들지 못했어요</span>}
       </p>
-      {tab.stage === "failed" && (
-        <div className="mt-4 flex justify-center">
-          <button type="button" onClick={onRetry} className="btn btn-sm">
-            다시 시도
-          </button>
-        </div>
-      )}
+      {tab.stage === "failed" && <FailState title="문제를 만들지 못했어요" onRetry={onRetry} />}
       {tab.stage === "problem" && (
         <>
           {/* 그 번호에 문제가 뜰 때 칸을 비우므로, 칸이 차 있으면 지금 문제를 채점받은 것이다. */}
@@ -346,7 +314,7 @@ function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
       </div>
       <div className="quiz-done flex flex-col items-center px-1 text-center">
         <Burst>
-          <Mascot size={72} spin landing={setAllRight(results) ? "grin" : "open"} />
+          <Mascot size={72} spin mood={setAllRight(results) ? "wow" : "smile"} />
         </Burst>
         <h2 ref={focusOnMount} tabIndex={-1} className="mt-3 mb-1.5 text-lg leading-snug font-bold tracking-[-0.02em] outline-none">
           {setTitle(results)}
@@ -378,26 +346,28 @@ function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
   );
 }
 
-// 안내 문구는 응답을 받은 뒤에 보여 준다. 받기 전에 한쪽 문구를 띄우면 틀린 안내가 잠깐 보인다.
+// 안내 문구가 나중에 붙으면 화면이 밀리므로, 응답을 받을 때까지 홈 대신 로딩을 두고 한 번에 보여 준다.
+// 받지 못하면 틀린 안내를 띄우지 않도록 문구만 빼고 보여 준다.
 type QuizHomeProps = { unitId: string; pastRef: (element: HTMLElement | null) => void; onStart: () => void; onPast: () => void };
 
 function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
-  const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean }>();
+  const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean | undefined }>();
   useEffect(() => {
     let current = true;
     void fetchPersonalized(unitId).then((value) => {
-      if (current && value !== undefined) setPersonalized({ unitId, value });
+      if (current) setPersonalized({ unitId, value });
     });
     return () => {
       current = false;
     };
   }, [unitId]);
-  const known = personalized?.unitId === unitId ? personalized.value : undefined;
+  if (personalized?.unitId !== unitId) return <QuizHomeLoading />;
+  const known = personalized.value;
 
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
       <QuizHomeArt />
-      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">확인 문제</h2>
+      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">이해했는지 확인해 볼까요?</h2>
       {known !== undefined && (
         <p className="text-[13.5px] leading-relaxed text-gray">
           {known ? "AI가 내가 나눈 대화를 바탕으로" : "AI가 내 대화를 바탕으로 문제를 내요."}
@@ -413,6 +383,25 @@ function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
           지난 문제 보기
         </button>
       </div>
+    </div>
+  );
+}
+
+// 시안의 가장 조용한 로딩이다. 대화의 기다리는 말풍선을 키워 퀴즈 홈 자리에 둔다.
+function QuizHomeLoading() {
+  return (
+    <div aria-busy className="my-auto flex flex-col items-center p-1 pb-20">
+      <span
+        aria-hidden
+        className="grid h-[60px] w-[88px] place-items-center rounded-[22px_22px_22px_8px] bg-bg [&_.typing]:gap-[7px] [&_.typing]:p-0 [&_.typing_i]:size-2.5"
+      >
+        <span className="typing">
+          <i />
+          <i />
+          <i />
+        </span>
+      </span>
+      <span className="sr-only">퀴즈 홈을 불러오고 있어요</span>
     </div>
   );
 }
@@ -435,8 +424,8 @@ function QuizGauge({ number, filled }: { number: number; filled: number }) {
           <i key={index} className={index < filled ? "on" : undefined} />
         ))}
       </div>
-      <span className="quiz-runner" style={{ transform: runner }}>
-        <Mascot size={22} />
+      <span aria-hidden className="quiz-runner" style={{ transform: runner }}>
+        <Image src={mascot} width={22} height={22} alt="" draggable={false} />
       </span>
       <p className="sr-only">
         문제 {number} / {SET_SIZE}
