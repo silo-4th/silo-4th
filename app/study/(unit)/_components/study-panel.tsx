@@ -393,7 +393,7 @@ function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
       <QuizHomeArt />
-      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">확인 문제</h2>
+      <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">이해했는지 확인해 볼까요?</h2>
       {known !== undefined && (
         <p className="text-[13.5px] leading-relaxed text-gray">
           {known ? "AI가 내가 나눈 대화를 바탕으로" : "AI가 내 대화를 바탕으로 문제를 내요."}
