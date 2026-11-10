@@ -13,7 +13,7 @@ import {
   startDwell,
 } from "@/lib/section-reading";
 import { sectionKey } from "./scroll-to-section";
-import { useSelectionAsk } from "./selection-ask";
+import { useSelectionAsk, useSelectionAskReady } from "./selection-ask";
 
 const SECTION_VIEWS_PATH = "/api/section-views";
 
@@ -34,6 +34,7 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
   const [reading, setReading] = useState<number>();
   const [picked, setPicked] = useState<Picked>();
   const selectionAsks = useSelectionAsk();
+  const canAsk = useSelectionAskReady();
 
   // 선택한 글을 다시 누르거나 본문 밖을 눌러 선택이 풀리면, 또는 새로 드래그하기 시작하면 메뉴를 닫는다.
   // 풀린 선택이나 앞 선택으로 질문이 가지 않게 한다.
@@ -287,7 +288,7 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
           {DRAG_MENU_ASKS.map(({ id, label, content }) => {
             const Icon = ASK_ICONS[id];
             return (
-              <button key={id} type="button" onClick={() => ask(content)}>
+              <button key={id} type="button" disabled={!canAsk} onClick={() => ask(content)}>
                 <Icon size={13} aria-hidden />
                 {label}
               </button>

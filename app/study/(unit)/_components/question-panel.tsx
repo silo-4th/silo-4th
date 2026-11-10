@@ -123,8 +123,6 @@ export function QuestionPanel({
   const [listAttempt, setListAttempt] = useState(0);
   const [hasDraft, setHasDraft] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  // 열 세션을 정하기 전에 드래그 메뉴로 보낸 질문들이다. 세션을 정하면 보낸 순서대로 그 세션으로 보낸다.
-  const waitingAsks = useRef<SelectionAsk[]>([]);
   const historyButton = useRef<HTMLButtonElement>(null);
 
   // 목록을 받기 전에 연 빈 대화는 기억하지 않아, 목록을 받으면 보던 대화로 돌아가게 한다.
@@ -169,9 +167,7 @@ export function QuestionPanel({
   const restoreSession = useEffectEvent((saved: SessionSummary[] | undefined) => {
     if (!saved) {
       setListLoad("failed");
-      const sessionId = openedSession ?? freshSession();
-      setOpenedSession(sessionId);
-      askWaiting(sessionId);
+      if (!openedSession) setOpenedSession(freshSession());
       return;
     }
     setListLoad("done");
@@ -180,15 +176,9 @@ export function QuestionPanel({
     if (openedSession) return;
     const remembered = readOpenedSession();
     const restored = saved.find(({ id }) => id === remembered)?.id ?? saved[0]?.id;
-    const sessionId = restored ?? freshSession();
     if (restored) openSession(restored);
-    else show(sessionId);
-    askWaiting(sessionId);
+    else startSession();
   });
-
-  function askWaiting(sessionId: string) {
-    for (const { content, selection } of waitingAsks.current.splice(0)) startQuestion(sessionId, content, selection);
-  }
 
   useEffect(() => {
     let active = true;
@@ -289,10 +279,9 @@ export function QuestionPanel({
     ]);
   }
 
-  // 화면을 열자마자 드래그하면 아직 열 세션을 정하기 전일 수 있다. 질문을 버리지 않고 세션을 정할 때까지 둔다.
+  // 보낼 수 없는 동안에는 메뉴 버튼이 막혀 있다.
   const askSelection = useEffectEvent((selectionAsk: SelectionAsk) => {
     if (openedSession) startQuestion(openedSession, selectionAsk.content, selectionAsk.selection);
-    else waitingAsks.current.push(selectionAsk);
   });
   const selectionAsks = useSelectionAsk();
   useEffect(() => selectionAsks.listen((selectionAsk) => askSelection(selectionAsk)), [selectionAsks]);
@@ -330,6 +319,10 @@ export function QuestionPanel({
   const load = openedSession === undefined ? "loading" : sessionLoads[openedSession];
   // 시안처럼 쓴 글이 없거나, 지난 대화를 받는 중이거나, 이 대화의 답을 받는 중이면 보내지 않는다.
   const canSend = hasDraft && load !== "loading" && !shown.some(({ status }) => status === "sending");
+  // 드래그 메뉴 버튼도 입력창처럼 막는다. 지난 대화를 받지 못했을 때도 막아, 보낸 질문이 실패 화면에 가려지지 않게 한다.
+  const canAsk = !load && !shown.some(({ status }) => status === "sending");
+  useEffect(() => selectionAsks.setReady(canAsk), [selectionAsks, canAsk]);
+  useEffect(() => () => selectionAsks.setReady(false), [selectionAsks]);
 
   return (
     <>
