@@ -1,5 +1,6 @@
 "use client";
 
+import { LoaderCircle } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { authClient, succeeded } from "@/lib/auth/client";
 import { loginNotice } from "@/lib/auth/login-notice";
@@ -27,12 +28,7 @@ export function SocialLoginButtons({ error }: { error?: string }) {
   }
 
   return (
-    <div className="flex max-w-[380px] flex-col gap-2">
-      {notice && (
-        <p role="alert" className="text-sm text-red">
-          {notice}
-        </p>
-      )}
+    <div className="flex max-w-[440px] flex-col gap-2">
       {loginButtons(enabledProviders).map(({ provider, label }) => {
         const Icon = providerIcons[provider];
         return (
@@ -40,14 +36,39 @@ export function SocialLoginButtons({ error }: { error?: string }) {
             key={provider}
             type="button"
             disabled={pending}
+            aria-busy={pending}
             onClick={() => signIn(provider)}
-            className="flex h-12 items-center justify-center gap-2.5 rounded-sm border border-line bg-white text-[15px] font-semibold transition-colors hover:not-disabled:bg-bg disabled:cursor-default disabled:text-ink-2"
+            className="flex h-12 items-center justify-center gap-2.5 rounded-sm border border-[#8e918f] bg-[#131314] text-[15px] font-semibold tracking-normal text-[#e3e3e3] transition-[background-color,border-color,color] duration-200 ease-[ease] hover:not-disabled:bg-[#2a2b2c] disabled:cursor-default disabled:opacity-85"
           >
-            <Icon />
-            {label}
+            {pending ? (
+              <>
+                <LoaderCircle
+                  size={18}
+                  aria-hidden
+                  className="text-gray animate-[spin_0.8s_linear_infinite] motion-reduce:animate-[spin_2s_linear_infinite]"
+                />
+                로그인하는 중…
+              </>
+            ) : (
+              <>
+                <Icon />
+                {label}
+              </>
+            )}
           </button>
         );
       })}
+      {notice && !pending && (
+        <p
+          role="alert"
+          className="mt-0.5 w-full max-w-[380px] self-center animate-[notice-in_0.25s_ease-out] rounded-md bg-red-50 px-4 py-3 text-center text-sm leading-normal font-medium text-red"
+        >
+          {notice}
+        </p>
+      )}
+      <p role="status" className="sr-only">
+        {pending ? "로그인하는 중" : ""}
+      </p>
     </div>
   );
 }

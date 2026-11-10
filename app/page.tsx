@@ -18,14 +18,17 @@ export default function Home({ searchParams }: PageProps<"/">) {
       <BrandHeader />
       <main className="grid flex-1 grid-cols-1 min-[861px]:grid-cols-2">
         <Preview />
-        <section className="flex flex-col justify-center px-6 py-10 min-[861px]:px-[12%]">
-          <h1 className="mb-3 text-[28px] leading-[1.4] font-bold tracking-[-0.03em]">나만의 학습을 시작해보세요!</h1>
-          <p className="mb-7 max-w-[420px] text-[17px] leading-relaxed text-ink-2">
-            오늘 AI에게 물어본 내용, 내일 진짜 혼자 풀 수 있는지 확인해 드려요
+        <section className="flex flex-col items-center justify-center px-8 *:w-full *:max-w-[440px]">
+          <h1 className="mb-3 text-[28px] leading-[1.4] font-bold tracking-[-0.03em]">나만의 학습을 시작해 보세요!</h1>
+          <p className="mb-8 text-base leading-[1.6] text-ink-2">
+            맞춤형 AI 문제로 막힌 부분을 해결하고, 진짜 내 것으로 만들어요.
           </p>
           <Suspense>
             <Login searchParams={searchParams} />
           </Suspense>
+          <p className="mt-4 mb-3 text-xs leading-normal text-gray-2">
+            Google로 로그인하면 Pluck 이용약관과 개인정보처리방침에 동의하게 돼요.
+          </p>
         </section>
       </main>
     </>
