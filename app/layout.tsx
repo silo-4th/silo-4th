@@ -4,7 +4,7 @@ import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "recall-agent",
+  title: "Pluck - AI 리딩 파트너",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowUp, Menu, SquarePen } from "lucide-react";
+import { ArrowUp, ListChecks, Menu, SquarePen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { type FormEvent, Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { askQuestion } from "@/lib/answer-stream";
 import {
@@ -89,36 +90,59 @@ export function QuestionPanel({
   const [turns, setTurns] = useState<Turn[]>([]);
   // 이미 불러왔거나 이 탭에서 만든 세션이다. 다시 불러오지 않아 화면에서 받는 중인 답을 덮지 않는다.
   const loadedSessions = useRef(new Set<string>());
+  // 저장된 질문을 받는 중이거나 받지 못한 세션이다. 받으면 지운다.
+  const [sessionLoads, setSessionLoads] = useState<Record<string, "loading" | "failed">>({});
+  const [listLoad, setListLoad] = useState<"loading" | "failed" | "done">("loading");
+  const [listAttempt, setListAttempt] = useState(0);
   const input = useRef<HTMLTextAreaElement>(null);
   const historyButton = useRef<HTMLButtonElement>(null);
 
+  // 목록을 받기 전에 연 빈 대화는 기억하지 않아, 목록을 받으면 보던 대화로 돌아가게 한다.
   function show(sessionId: string) {
     setOpenedSession(sessionId);
-    rememberOpenedSession(sessionId);
+    if (listLoad === "done") rememberOpenedSession(sessionId);
   }
 
   function openSession(sessionId: string) {
     show(sessionId);
     if (loadedSessions.current.has(sessionId)) return;
     loadedSessions.current.add(sessionId);
+    setSessionLoads((previous) => ({ ...previous, [sessionId]: "loading" }));
     void fetchJson<{ turns: SessionTurn[] }>(`/api/question-sessions/${sessionId}`).then((result) => {
       if (!result) {
         loadedSessions.current.delete(sessionId);
+        setSessionLoads((previous) => ({ ...previous, [sessionId]: "failed" }));
         return;
       }
       const saved = result.turns.map((turn) => savedTurn(sessionId, unitId, turn));
       setTurns((previous) => [...saved.filter(({ id }) => !previous.some((turn) => turn.id === id)), ...previous]);
+      setSessionLoads((previous) => {
+        const rest = { ...previous };
+        delete rest[sessionId];
+        return rest;
+      });
     });
   }
 
   // 세션은 첫 질문을 보낼 때 서버에 생기므로, 질문하기 전까지는 목록에 넣지 않는다.
   function startSession() {
-    const sessionId = crypto.randomUUID();
-    loadedSessions.current.add(sessionId);
-    show(sessionId);
+    show(freshSession());
   }
 
-  const restoreSession = useEffectEvent((saved: SessionSummary[]) => {
+  function freshSession() {
+    const sessionId = crypto.randomUUID();
+    loadedSessions.current.add(sessionId);
+    return sessionId;
+  }
+
+  // 목록을 받지 못해도 질문은 할 수 있게 새 대화를 연다. 아직 목록 상태가 바뀌기 전이라 show를 거치지 않고 기억하지 않는다.
+  const restoreSession = useEffectEvent((saved: SessionSummary[] | undefined) => {
+    if (!saved) {
+      setListLoad("failed");
+      if (!openedSession) setOpenedSession(freshSession());
+      return;
+    }
+    setListLoad("done");
     setSessions(saved);
     const remembered = readOpenedSession();
     const sessionId = saved.find(({ id }) => id === remembered)?.id ?? saved[0]?.id;
@@ -129,12 +153,17 @@ export function QuestionPanel({
   useEffect(() => {
     let active = true;
     void fetchJson<{ sessions: SessionSummary[] }>("/api/question-sessions").then((result) => {
-      if (active) restoreSession(result?.sessions ?? []);
+      if (active) restoreSession(result?.sessions);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [listAttempt]);
+
+  function retryList() {
+    setListLoad("loading");
+    setListAttempt((count) => count + 1);
+  }
 
   useEffect(() => {
     if (!notice) return;
@@ -188,9 +217,13 @@ export function QuestionPanel({
   }
 
   function send(formData: FormData) {
+    // 빈 질문이어도 폼은 비워지므로, 늘어난 입력창 높이를 먼저 되돌린다.
+    if (input.current) input.current.style.height = "";
     const content = String(formData.get("question") ?? "").trim();
     if (!content || !openedSession) return;
     void ask({ id: crypto.randomUUID(), sessionId: openedSession, unitId, content });
+    // 질문하면 서버에 남는 대화가 되므로, 목록을 받지 못한 동안 연 대화도 이제 기억한다.
+    rememberOpenedSession(openedSession);
     // 마지막으로 질문한 세션을 맨 위로 올린다. 처음 질문한 세션은 이 질문이 제목이 된다.
     setSessions((previous) => [
       { id: openedSession, title: previous.find(({ id }) => id === openedSession)?.title ?? content },
@@ -206,6 +239,13 @@ export function QuestionPanel({
     if (openedSession) event.currentTarget.form?.requestSubmit();
   }
 
+  // 글이 늘면 입력창도 CSS의 최대 높이까지 함께 늘고, 그보다 길면 안에서 스크롤된다.
+  function growInput(event: FormEvent<HTMLTextAreaElement>) {
+    const field = event.currentTarget;
+    field.style.height = "";
+    field.style.height = `${field.scrollHeight}px`;
+  }
+
   // 메뉴를 닫으면 누른 대화 기록 버튼으로 포커스를 돌려 키보드 사용자가 자리를 잃지 않게 한다.
   function closeHistory() {
     flushSync(() => setHistoryOpened(false));
@@ -219,6 +259,8 @@ export function QuestionPanel({
   const last = shown.at(-1);
   // 목록에 있는 세션은 저장된 질문이 있으므로, 불러오는 중이거나 불러오지 못했을 때도 빈 대화 인사를 띄우지 않는다.
   const empty = shown.length === 0 && openedSession !== undefined && !sessions.some(({ id }) => id === openedSession);
+  // 세션 목록을 받기 전에는 어느 대화든 지난 대화를 받는 중이다.
+  const load = listLoad !== "done" ? listLoad : openedSession === undefined ? "loading" : sessionLoads[openedSession];
 
   return (
     <>
@@ -245,12 +287,19 @@ export function QuestionPanel({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="chat">
-            {empty && (
+            {empty && !load && (
               <div className="welcome">
                 <Mascot size={112} live />
                 <p className="welcome-hi">반가워요! 저와 함께 쉽게 공부해요!</p>
                 <h3 className="welcome-title">오늘은 무엇부터 해볼까요?</h3>
               </div>
+            )}
+            {load === "loading" && <ChatSkeleton />}
+            {load === "failed" && openedSession && (
+              <FailState
+                title="지난 대화를 불러오지 못했어요"
+                onRetry={() => (listLoad === "failed" ? retryList() : openSession(openedSession))}
+              />
             )}
             <ol aria-label="대화" className="chat-list">
               {shown.map(({ id, sessionId, unitId: askedUnitId, content, ...turn }) => (
@@ -291,27 +340,39 @@ export function QuestionPanel({
             {last?.status === "answered" && (
               <div className="bot-actions">
                 <button type="button" onClick={() => onSolveRelated(last.id)}>
-                  관련 문제 풀어보기
+                  <ListChecks size={12} />
+                  관련 문제 풀기
                 </button>
               </div>
             )}
-            {waiting.length > 0 && (
-              <div aria-hidden className="msg bot">
-                <Mascot size={26} />
-                <div className="bubble">
-                  <span className="typing">
-                    <i />
-                    <i />
-                    <i />
+            {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 안을 바꾼다.
+                비어 있을 때는 대화 목록 아래에 간격이 더해지지 않게 그만큼 끌어올린다. */}
+            <div role="status" className="flex flex-col empty:-mt-3.5">
+              {load === "loading" && <span className="sr-only">지난 대화를 불러오고 있어요</span>}
+              {waiting.length > 0 && (
+                <div className="msg bot">
+                  <span className="flex flex-none">
+                    <Mascot size={26} thinking />
                   </span>
+                  <div className="flex flex-col items-start gap-1.5">
+                    <div aria-hidden className="bubble">
+                      <span className="typing">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    </div>
+                    {waiting.some((turn) => turn.slow) ? (
+                      <span className="rise-in pl-0.5 text-[12px] whitespace-nowrap text-gray">조금 오래 걸리고 있어요</span>
+                    ) : (
+                      <span className="sr-only">답을 준비하고 있어요</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
-        <p role="status" className="px-4 pb-1.5 text-xs text-gray">
-          {waiting.length > 0 && (waiting.some((turn) => turn.slow) ? "답을 기다리는 중이에요" : "답을 준비하고 있어요")}
-        </p>
         <form action={send} className="composer">
           <textarea
             ref={input}
@@ -319,6 +380,7 @@ export function QuestionPanel({
             aria-label="질문"
             placeholder="궁금한 걸 편하게 물어보세요. 예: 이건 언제 써요?"
             onKeyDown={sendOnEnter}
+            onInput={growInput}
           />
           <div className="composer-bar">
             <button type="submit" aria-label="보내기" disabled={!openedSession} className="send">
@@ -326,6 +388,7 @@ export function QuestionPanel({
             </button>
           </div>
         </form>
+        <p className="disclaimer">AI는 실수할 수 있어요. 나눈 대화는 내게 맞는 퀴즈를 만드는 데 활용돼요.</p>
       </div>
       {/* 낭독기는 이미 있던 알림 영역에 들어온 글만 읽으므로 영역은 늘 두고 안내만 넣었다 뺀다. */}
       <div aria-live="polite">{notice && <p className="toast">{notice.text}</p>}</div>
@@ -342,5 +405,31 @@ export function QuestionPanel({
         />
       )}
     </>
+  );
+}
+
+const SKELETON_ROUNDS = [
+  { mine: 46, answer: [100, 92, 64] },
+  { mine: 58, answer: [100, 78] },
+];
+
+// 지난 대화를 받는 동안 내 말풍선과 플러키의 답 자리를 두 번 보여 준다.
+function ChatSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-6">
+      {SKELETON_ROUNDS.map(({ mine, answer }, round) => (
+        <div key={round} className="flex flex-col gap-3.5">
+          <i className="skel h-10 self-end rounded-[14px_14px_4px_14px]" style={{ width: `${mine}%` }} />
+          <div className="flex gap-2.5">
+            <i className="skel size-[26px] flex-none rounded-full" />
+            <div className="flex flex-1 flex-col gap-2.5 pt-1">
+              {answer.map((width, line) => (
+                <i key={line} className="skel h-[13px]" style={{ width: `${width}%` }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

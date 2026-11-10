@@ -144,10 +144,11 @@ test("TC-55 답 조각이 오는 대로 질문 아래에 이어서 보여요", a
   await expect(page.getByText("그룹마다 한 번씩")).toHaveCount(0);
 });
 
-test("TC-56 첫 글자가 5초 동안 오지 않으면 기다리는 중 문구로 바뀌어요", async ({ page }) => {
+test("TC-56 첫 글자가 5초 동안 오지 않으면 기다리는 말풍선 아래에 조금 오래 걸리고 있어요가 붙어요", async ({ page }) => {
   const start = new Date("2026-11-04T09:00:00+09:00");
   await page.clock.install({ time: start });
   const sending = page.getByRole("status");
+  const slow = page.getByText("조금 오래 걸리고 있어요");
 
   await page.goto("/study");
   await page.clock.pauseAt(new Date(start.getTime() + 60_000));
@@ -155,10 +156,11 @@ test("TC-56 첫 글자가 5초 동안 오지 않으면 기다리는 중 문구�
   await page.getByRole("button", { name: "보내기", exact: true }).click();
 
   await expect(sending).toHaveText("답을 준비하고 있어요");
+  await expect(slow).toHaveCount(0);
   await page.clock.runFor(4_900);
-  await expect(sending).toHaveText("답을 준비하고 있어요");
+  await expect(slow).toHaveCount(0);
   await page.clock.runFor(100);
-  await expect(sending).toHaveText("답을 기다리는 중이에요");
+  await expect(slow).toBeVisible();
 });
 
 test("TC-57 끊긴 질문을 다시 시도했는데 처리 중이면 새 질문 ID로 바로 다시 보내요", async ({ page }) => {
