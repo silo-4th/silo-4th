@@ -406,6 +406,10 @@
   @media (prefers-reduced-motion: reduce) {
     .quiz-strip i, .quiz-runner { transition: none; }
   }
+  /* 문제를 만들거나 불러오는 동안 문제 카드 모양을 회색 막대로 그려 두어, 문제가 오면 같은 자리에 들어오게 한다. */
+  .quiz-skel { display: flex; flex-direction: column; }
+  .skel-line { height: 14px; }
+  .quiz-skel-opt { height: 48px; margin-top: 10px; border-radius: var(--radius-md); }
 }
 
 /* 퀴즈 홈의 시험지 마스코트와 결과 화면의 마스코트, 반짝이다. 시안 styles.css의 quiz-art, quiz-done, burst를 옮겼다. */

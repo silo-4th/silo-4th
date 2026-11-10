@@ -263,13 +263,9 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
       {tab.stage === "idle" && active && !pastShown && (
         <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
       )}
-      {waiting && (
-        <div className="flex justify-center pt-8">
-          <Mascot size={88} spin />
-        </div>
-      )}
+      {waiting && <QuizSkeleton />}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
-      <p role="status" className={waiting ? "text-center text-sm text-gray" : "sr-only"}>
+      <p role="status" className="sr-only">
         {tab.stage === "loading" && "문제를 만들고 있어요"}
         {tab.stage === "resuming" && "풀던 문제를 불러오고 있어요"}
       </p>
@@ -402,6 +398,25 @@ function QuizHomeLoading() {
         </span>
       </span>
       <span className="sr-only">퀴즈 홈을 불러오고 있어요</span>
+    </div>
+  );
+}
+
+// 진행 막대, 개념 칩, 문제 두 줄, 보기 4칸으로 문제 카드 모양을 그린다.
+function QuizSkeleton() {
+  return (
+    <div aria-hidden className="quiz-skel">
+      <div className="quiz-strip">
+        {Array.from({ length: SET_SIZE }, (_, index) => (
+          <i key={index} />
+        ))}
+      </div>
+      <i className="skel mt-5 h-6 w-[92px]" />
+      <i className="skel skel-line mt-3.5 w-[92%]" />
+      <i className="skel skel-line mt-2.5 w-[64%]" />
+      {[0, 1, 2, 3].map((index) => (
+        <i key={index} className="skel quiz-skel-opt" />
+      ))}
     </div>
   );
 }

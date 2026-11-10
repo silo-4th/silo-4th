@@ -710,3 +710,122 @@ test("TC-278 지난 문제 목록을 불러오는 동안 뼈대가 보이고, �
   await expect(failed).toHaveCount(0);
   expect(listedAfterRetry).toBeGreaterThan(0);
 });
+
+function hold() {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { held, release };
+}
+
+const ATTEMPTS_PATH = "**/api/quiz-attempts";
+
+test("TC-298 문제를 만드는 동안 마스코트 대신 문제 카드 뼈대가 보이고, 문제가 오면 뼈대 자리에 그대로 문제가 떠요", async ({ page }) => {
+  const problem = sampleProblem("묶은 뒤에 거르는 절은 무엇인가요?");
+  const generation = hold();
+  await page.route(PROBLEMS_PATH, async (route) => {
+    await generation.held;
+    return route.fulfill({ json: problem });
+  });
+
+  await openFirstUnit(page);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  const panel = quizPanel(page);
+
+  const skeleton = panel.locator(".quiz-skel");
+  await expect(skeleton).toBeVisible();
+  await expect(panel.locator(".mascot")).toHaveCount(0);
+  await expect(skeleton.locator(".quiz-strip")).toBeVisible();
+  await expect(skeleton.locator(".skel:not(.skel-line):not(.quiz-skel-opt)")).toHaveCount(1);
+  await expect(skeleton.locator(".skel-line")).toHaveCount(2);
+  await expect(skeleton.locator(".quiz-skel-opt")).toHaveCount(4);
+  await expect(panel.getByRole("status").filter({ hasText: "문제를 만들고 있어요" })).toHaveCount(1);
+  const skeletonStrip = await skeleton.locator(".quiz-strip").boundingBox();
+
+  generation.release();
+  await expect(panel.getByText(problem.stem)).toBeVisible();
+  await expect(skeleton).toHaveCount(0);
+  expect(await panel.getByRole("progressbar", { name: "문제 진행" }).boundingBox()).toEqual(skeletonStrip);
+});
+
+test("TC-300 채점에 실패하면 해설 자리에 채점 결과를 받지 못했어요 안내와 다시 시도, 다음 문제로가 보이고, 다시 시도하면 채점 결과가 떠요", async ({ page }) => {
+  const problem = sampleProblem("그룹 조건은 어디에 쓰나요?");
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: problem }));
+  let posts = 0;
+  await page.route(ATTEMPTS_PATH, (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts += 1;
+    if (posts <= 2) return route.fulfill({ status: 502 });
+    return route.fulfill({
+      json: {
+        outcome: "graded",
+        isCorrect: true,
+        answer: { choices: (problem.choices ?? []).map((text) => ({ text })), answerIndex: 1 },
+        explanation: "HAVING은 묶은 뒤에 걸러요.",
+      },
+    });
+  });
+
+  await openFirstUnit(page);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  const card = quizPanel(page).getByRole("region", { name: "퀴즈" });
+  await card.getByText("HAVING", { exact: true }).click();
+  await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
+
+  const notice = card.getByRole("alert");
+  await expect(notice).toContainText("채점 결과를 받지 못했어요.");
+  const retry = notice.getByRole("button", { name: "다시 시도" });
+  await expect(retry).toBeVisible();
+  const next = card.getByRole("button", { name: "다음 문제로" });
+  await expect(next).toBeVisible();
+  const noticeBox = await notice.boundingBox();
+  const nextBox = await next.boundingBox();
+  expect(nextBox?.y).toBeGreaterThan((noticeBox?.y ?? 0) + (noticeBox?.height ?? 0) - 1);
+  await expect(card.getByRole("button", { name: "정답 확인" })).toHaveCount(0);
+  await expect(card.getByRole("radio", { name: "HAVING" })).toBeChecked();
+  expect(posts).toBe(2);
+
+  await retry.click();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+  await expect(card.getByText("HAVING은 묶은 뒤에 걸러요.")).toBeVisible();
+});
+
+test("TC-306 빈칸 문제에서 답과 확신도를 고른 뒤 입력칸에서 Enter를 누르면 정답 확인을 누른 것처럼 채점을 보내고 버튼이 채점하는 중…으로 바뀌어요", async ({ page }) => {
+  const problem: ProblemView = { ...sampleProblem("묶은 뒤에 거르는 절은 ____예요."), format: "blank", choices: undefined };
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: problem }));
+  const grading = hold();
+  let posts = 0;
+  await page.route(ATTEMPTS_PATH, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts += 1;
+    await grading.held;
+    return route.fulfill({
+      json: { outcome: "graded", isCorrect: true, answer: { accepted: ["HAVING"] }, explanation: "HAVING은 묶은 뒤에 걸러요." },
+    });
+  });
+
+  await openFirstUnit(page);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  const card = quizPanel(page).getByRole("region", { name: "퀴즈" });
+  const input = card.getByRole("textbox", { name: "빈칸에 들어갈 말" });
+  await input.fill("HAVING");
+  await input.press("Enter");
+  await expect(card.getByRole("button", { name: "정답 확인" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "채점하는 중…" })).toHaveCount(0);
+
+  await card.getByRole("button", { name: "애매해요" }).click();
+  await input.press("Enter");
+  const busy = card.getByRole("button", { name: "채점하는 중…" });
+  await expect(busy).toBeDisabled();
+  await expect(busy.locator("svg")).toBeVisible();
+  await expect.poll(() => posts).toBe(1);
+
+  grading.release();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+  expect(posts).toBe(1);
+});
