@@ -9,8 +9,7 @@ import { learner } from "@/lib/db/schema";
 import { type ExamDateError, parseExamDate } from "@/lib/exam-date";
 import { HOME_PATH, STUDY_PATH } from "@/lib/routes";
 
-// 안내와 함께 낸 값을 돌려준다. 폼은 이 값으로 다시 채워져 학습자가 처음부터 고르지 않아도 된다.
-export type StartFormState = { notice: string; examDate: string; consented: boolean } | null;
+export type StartFormState = { notice: string } | null;
 
 const NOTICES: Record<ExamDateError | "consent" | "save_failed", string> = {
   required: "시험 날짜를 골라 주세요.",
@@ -31,8 +30,8 @@ export async function submitStart(_previous: StartFormState, formData: FormData)
     consented: formData.get("consent") === "on",
   };
   const parsed = parseExamDate(submitted.examDate, new Date());
-  if (!parsed.ok) return { ...submitted, notice: NOTICES[parsed.error] };
-  if (!submitted.consented) return { ...submitted, notice: NOTICES.consent };
+  if (!parsed.ok) return { notice: NOTICES[parsed.error] };
+  if (!submitted.consented) return { notice: NOTICES.consent };
 
   try {
     // 두 탭에서 거의 동시에 내도 먼저 저장한 값이 남는다.
@@ -43,7 +42,7 @@ export async function submitStart(_previous: StartFormState, formData: FormData)
   } catch (error) {
     // DB 오류 원본에는 쿼리 값이 담기므로 정리한 메시지만 남긴다.
     reportAuthError(error, "start");
-    return { ...submitted, notice: NOTICES.save_failed };
+    return { notice: NOTICES.save_failed };
   }
   redirect(STUDY_PATH);
 }

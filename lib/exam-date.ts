@@ -10,8 +10,12 @@ export function parseExamDate(value: string, now: Date): ExamDateResult {
   if (!value) return { ok: false, error: "required" };
   if (!isCalendarDate(value)) return { ok: false, error: "invalid" };
   // 같은 형식의 날짜 문자열은 사전순과 날짜순이 같다.
-  if (value < koreanDate.format(now)) return { ok: false, error: "past" };
+  if (value < koreanToday(now)) return { ok: false, error: "past" };
   return { ok: true, examDate: value };
+}
+
+export function koreanToday(now: Date) {
+  return koreanDate.format(now);
 }
 
 // `2026-02-30`처럼 달력에 없는 날은 Date가 다음 달로 넘기므로, 되돌린 값이 같은지 본다.

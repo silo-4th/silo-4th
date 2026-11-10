@@ -93,6 +93,22 @@
   .input:focus { outline: none; border-color: var(--color-green); }
 }
 
+/* 시작 화면. 달력 아이콘을 칸 앞에 두어 브라우저 달력이 아이콘 바로 아래에 열린다. */
+@layer components {
+  .date-field { position: relative; display: block; }
+  .date-field .input { width: 100%; padding-left: 44px; cursor: pointer; }
+  .date-field .input::-webkit-calendar-picker-indicator { display: none; }
+  .date-field-ico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--color-gray); pointer-events: none; }
+
+  .start-consent { display: flex; align-items: flex-start; gap: --spacing(2.5); font-size: 14px; line-height: 1.55; color: var(--color-ink-2); cursor: pointer; }
+  /* 브라우저 기본 체크는 이 초록 위에 검은 표시를 그려서, 흰 표시를 직접 그린다. */
+  .start-consent input { appearance: none; margin: 2px 0 0; letter-spacing: normal; width: 18px; height: 18px; flex: none; border: 1.5px solid var(--color-gray-3); border-radius: 5px; background: #fff center / 12px no-repeat; cursor: pointer; transition: background-color 0.15s, border-color 0.15s; }
+  .start-consent input:checked { border-color: var(--color-green); background-color: var(--color-green); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
+  .start-consent input:focus-visible { outline: 2px solid var(--color-green); outline-offset: 2px; }
+  .start-consent input:disabled { cursor: default; }
+}
+@keyframes notice-in { from { opacity: 0; transform: translateY(4px); } }
+
 /* 시안의 오른쪽 패널과 에이전트 탭. */
 @layer components {
   .panel { position: relative; width: 420px; flex: none; border-left: 1px solid var(--color-line); display: flex; flex-direction: column; min-height: 0; background: #fff; }
@@ -281,7 +297,7 @@
   .mascot-lid.r::before { background: radial-gradient(120% 90% at 55% 25%, #b9f3b4, #79dea2 60%, #45c98f); }
   .mascot-lid::after {
     content: ""; position: absolute; left: 20%; right: 20%; top: 22%; height: 34%; border-radius: 50%; opacity: 0;
-    border-bottom: 2.5px solid rgba(10, 70, 48, 0.75); animation: mascot-lash 5.6s infinite;
+    border-bottom: 2.5px solid rgba(10, 70, 48, 0.75); box-sizing: content-box; animation: mascot-lash 5.6s infinite;
   }
   .mascot:not(.mascot--live):not(.mascot--spin) img { transform-origin: 50% 90%; animation: mascot-idle 2.8s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) {
