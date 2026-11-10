@@ -34,7 +34,7 @@ export function UnitRail({ units, currentId }: { units: Unit[]; currentId: strin
         onClick={(event) => {
           if (event.target === event.currentTarget) close();
         }}
-        className="fixed top-14 bottom-0 left-0 m-0 h-auto max-h-none w-[300px] max-w-none flex-col border-r border-[#3a3c3e] bg-[#26282a] text-[#e9ecef] backdrop:bg-[rgba(18,19,20,0.35)] open:flex"
+        className="fixed top-14 bottom-0 left-0 m-0 h-auto max-h-none w-[300px] max-w-none flex-col border-r border-[#3a3c3e] bg-[#26282a] text-[#e9ecef] backdrop:bg-[rgba(18,19,20,0.35)] open:flex open:motion-safe:animate-[panel-menu-in_0.18s_cubic-bezier(0.22,1,0.36,1)]"
       >
         <div className="flex h-12 flex-none items-center justify-between pr-2.5 pl-5 text-[13px] font-bold text-gray-3">
           <span>강의 목록</span>
