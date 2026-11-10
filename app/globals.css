@@ -339,3 +339,82 @@
     .quiz-strip i, .quiz-runner { transition: none; }
   }
 }
+
+/* 퀴즈 홈의 시험지 마스코트와 결과 화면의 마스코트, 반짝이다. 시안 styles.css의 quiz-art, quiz-done, burst를 옮겼다. */
+@layer components {
+  .mascot-face { position: absolute; inset: 0; opacity: 0; }
+  .mascot-face--land { animation: mascot-face-land 3.8s infinite ease-in-out; }
+  .quiz-done .mascot--spin .mascot-body { animation-name: mascot-turn-low; }
+
+  .quiz-art { width: 139px; height: 99px; }
+  .quiz-art::after {
+    content: ""; position: absolute; left: 30%; right: 30%; bottom: -7px; height: 9px; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(30, 150, 95, 0.28), rgba(30, 150, 95, 0)); animation: quiz-art-shadow 2.8s ease-in-out infinite;
+  }
+  .quiz-art-bob { position: absolute; inset: 0; transform-origin: 50% 95%; animation: mascot-idle 2.8s ease-in-out infinite; }
+  .quiz-art img, .quiz-art-checks { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .mascot.quiz-art .quiz-art-bob img { animation: none; }
+  .mascot.quiz-art .quiz-art-bob img.quiz-art-mouth { opacity: 0; animation: quiz-art-mouth-open 5.6s ease-in-out infinite; }
+  .quiz-art-check { fill: none; stroke: #18aa6e; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .quiz-art-check.c1 { animation: quiz-art-check1 7s linear infinite; }
+  .quiz-art-check.c2 { animation: quiz-art-check2 7s linear infinite; }
+  .quiz-art-check.c3 { animation: quiz-art-check3 7s linear infinite; }
+  .quiz-art .mascot-lid { top: 39.8%; height: 27.8%; }
+  .quiz-art .mascot-lid.l { left: 34%; width: 15.71%; }
+  .quiz-art .mascot-lid.r { left: 53.64%; width: 14.93%; }
+  .quiz-art .mascot-lid::after { border-bottom-width: 2px; }
+  /* 눈 둘레 몸 색으로 칠하고 가장자리를 흐려, 눈을 감을 때 테두리 있는 타원이 보이지 않게 한다. */
+  .quiz-art .mascot-lid::before { filter: blur(1.2px); }
+  .quiz-art .mascot-lid.l::before { background: linear-gradient(180deg, #60e3a3 0%, #34cf93 45%, #16b87d 100%); }
+  .quiz-art .mascot-lid.r::before { background: linear-gradient(180deg, #b6f3b5 0%, #6fdca0 45%, #22c47e 100%); }
+
+  .burst { position: relative; display: inline-block; }
+  .burst > .mascot { position: relative; z-index: 1; }
+  .burst-layer { position: absolute; inset: -40px -90px -10px; pointer-events: none; z-index: 0; }
+  .burst-p, .burst-flash { position: absolute; display: block; }
+  .burst-p {
+    width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--c); border-radius: 50%; opacity: 0;
+    animation: burst-fly 1.4s cubic-bezier(0.15, 0.7, 0.3, 1) var(--d) both;
+  }
+  .burst-p.bar { width: 4px; height: 10px; margin: -5px 0 0 --spacing(-0.5); border-radius: 2px; }
+  .burst-flash {
+    width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; opacity: 0;
+    background: radial-gradient(circle, #fff 0%, #fde68a 40%, transparent 70%); animation: burst-flash 0.5s ease-out var(--d) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .burst-layer { display: none; }
+    .mascot-face, .quiz-art::after, .quiz-art-bob, .mascot.quiz-art .quiz-art-bob img.quiz-art-mouth, .quiz-art-check { animation: none !important; }
+    .quiz-art-check { stroke-dashoffset: 0; }
+  }
+}
+
+@keyframes mascot-face-land { 0%, 45.49%, 92%, 100% { opacity: 0; } 45.5%, 84% { opacity: 1; } }
+/* 결과 화면은 마스코트 위 여백이 좁아 낮게 뛴다. */
+@keyframes mascot-turn-low {
+  0% { transform: translateY(0) scale(1, 1); animation-timing-function: ease-in-out; }
+  14% { transform: translateY(0) scale(1.018, 0.982); animation-timing-function: ease-in-out; }
+  26% { transform: translateY(0) scale(1, 1); animation-timing-function: ease-in; }
+  33% { transform: translateY(0) scale(1.09, 0.9); animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  45% { transform: translateY(-11px) scale(0.97, 1.04); animation-timing-function: ease-in-out; }
+  55% { transform: translateY(-7px) scale(1, 1); animation-timing-function: ease-in; }
+  61% { transform: translateY(0) scale(1.1, 0.9); animation-timing-function: ease-out; }
+  67% { transform: translateY(-3px) scale(0.97, 1.03); animation-timing-function: ease-in-out; }
+  74% { transform: translateY(0) scale(1.02, 0.98); animation-timing-function: ease-in-out; }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes quiz-art-mouth-open { 0%, 52%, 80%, 100% { opacity: 0; } 58%, 72% { opacity: 1; } }
+@keyframes quiz-art-check1 { 0%, 4% { stroke-dashoffset: 1; opacity: 1; } 10%, 90% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes quiz-art-check2 { 0%, 37% { stroke-dashoffset: 1; opacity: 1; } 43%, 90% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes quiz-art-check3 { 0%, 70% { stroke-dashoffset: 1; opacity: 1; } 76%, 90% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes quiz-art-shadow { 0%, 100% { transform: scaleX(1); opacity: 1; } 30% { transform: scaleX(0.9); opacity: 0.8; } 60% { transform: scaleX(0.95); opacity: 0.9; } }
+@keyframes burst-fly {
+  0% { transform: translate(0, 0) rotate(0deg) scale(0.3); opacity: 1; }
+  55% { transform: translate(var(--dx), var(--dy)) rotate(calc(var(--rot) * 0.6)) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 28px)) rotate(var(--rot)) scale(0.6); opacity: 0; }
+}
+@keyframes burst-flash {
+  0% { transform: scale(0.2); opacity: 0; }
+  30% { transform: scale(2.4); opacity: 1; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
