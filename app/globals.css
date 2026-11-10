@@ -262,7 +262,7 @@
   .mascot-lid.r::before { background: radial-gradient(120% 90% at 55% 25%, #b9f3b4, #79dea2 60%, #45c98f); }
   .mascot-lid::after {
     content: ""; position: absolute; left: 20%; right: 20%; top: 22%; height: 34%; border-radius: 50%; opacity: 0;
-    border-bottom: 2.5px solid rgba(10, 70, 48, 0.75); animation: mascot-lash 5.6s infinite;
+    border-bottom: 2.5px solid rgba(10, 70, 48, 0.75); box-sizing: content-box; animation: mascot-lash 5.6s infinite;
   }
   .mascot:not(.mascot--live):not(.mascot--spin) img { transform-origin: 50% 90%; animation: mascot-idle 2.8s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) {
