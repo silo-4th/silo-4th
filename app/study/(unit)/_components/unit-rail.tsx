@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { SUBJECT_NAME } from "@/lib/subject";
+import { useBeginUnitSwitch } from "./unit-switch";
 
 type Unit = { id: string; title: string };
 
 export function UnitRail({ units, currentId }: { units: Unit[]; currentId: string }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
+  const beginSwitch = useBeginUnitSwitch();
   const close = () => dialogRef.current?.close();
 
   return (
@@ -54,7 +56,12 @@ export function UnitRail({ units, currentId }: { units: Unit[]; currentId: strin
                 <Link
                   href={`/study/${id}`}
                   aria-current={id === currentId ? "page" : undefined}
-                  onClick={close}
+                  onClick={(event) => {
+                    // 새 탭으로 여는 클릭은 이 화면을 옮기지 않는다. 지금 단원을 누르면 기다리던 다른 단원 이동이 취소된다.
+                    const sameTab = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+                    if (sameTab) beginSwitch(id === currentId ? undefined : { id, title });
+                    close();
+                  }}
                   className="group flex aspect-[16/7] flex-col justify-end gap-1 rounded-md bg-[#3a3d41] p-3 text-white outline-3 outline-offset-3 outline-transparent transition-[outline-color] hover:outline-green focus-visible:outline-white aria-[current=page]:bg-green-600"
                 >
                   <span className="text-[17px] leading-tight font-extrabold tracking-[-0.03em]">

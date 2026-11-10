@@ -1,14 +1,11 @@
 import Image from "next/image";
-import logo from "@/app/_assets/logo.svg";
+import logo from "@/app/_assets/pluck-logo.svg";
 
 export function BrandHeader() {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-white">
       <div className="flex h-[60px] items-center px-6">
-        <span className="inline-flex items-center gap-1.5 text-[22px] font-extrabold tracking-[-0.04em] text-green">
-          <Image src={logo} alt="" width={24} height={24} />
-          sprout
-        </span>
+        <Image src={logo} alt="Pluck" height={26} className="h-[26px] w-auto" draggable={false} preload />
       </div>
     </header>
   );

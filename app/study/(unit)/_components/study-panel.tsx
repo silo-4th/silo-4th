@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Burst } from "@/app/_components/burst";
+import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { ResultChipLabel } from "@/app/_components/result-chip";
@@ -269,7 +270,7 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
     backPending.current = false;
     focusOnMount(element);
   });
-  const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
+  const waiting = tab.stage === "loading" || tab.stage === "resuming";
   return (
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
     // 지난 문제의 제목 줄은 위에 붙어 있으므로, 키보드로 올라갈 때 그 아래로 스크롤해 포커스가 가려지지 않게 한다.
@@ -290,22 +291,15 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
       )}
       {waiting && (
         <div className="flex justify-center pt-8">
-          <Mascot size={88} spin={tab.stage !== "failed"} />
+          <Mascot size={88} spin />
         </div>
       )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
       <p role="status" className={waiting ? "text-center text-sm text-gray" : "sr-only"}>
         {tab.stage === "loading" && "문제를 만들고 있어요"}
         {tab.stage === "resuming" && "풀던 문제를 불러오고 있어요"}
-        {tab.stage === "failed" && <span className="font-bold text-red">문제를 만들지 못했어요</span>}
       </p>
-      {tab.stage === "failed" && (
-        <div className="mt-4 flex justify-center">
-          <button type="button" onClick={onRetry} className="btn btn-sm">
-            다시 시도
-          </button>
-        </div>
-      )}
+      {tab.stage === "failed" && <FailState title="문제를 만들지 못했어요" onRetry={onRetry} />}
       {tab.stage === "problem" && (
         <>
           {/* 그 번호에 문제가 뜰 때 칸을 비우므로, 칸이 차 있으면 지금 문제를 채점받은 것이다. */}
@@ -378,21 +372,23 @@ function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
   );
 }
 
-// 안내 문구는 응답을 받은 뒤에 보여 준다. 받기 전에 한쪽 문구를 띄우면 틀린 안내가 잠깐 보인다.
+// 안내 문구가 나중에 붙으면 화면이 밀리므로, 응답을 받을 때까지 홈 대신 로딩을 두고 한 번에 보여 준다.
+// 받지 못하면 틀린 안내를 띄우지 않도록 문구만 빼고 보여 준다.
 type QuizHomeProps = { unitId: string; pastRef: (element: HTMLElement | null) => void; onStart: () => void; onPast: () => void };
 
 function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
-  const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean }>();
+  const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean | undefined }>();
   useEffect(() => {
     let current = true;
     void fetchPersonalized(unitId).then((value) => {
-      if (current && value !== undefined) setPersonalized({ unitId, value });
+      if (current) setPersonalized({ unitId, value });
     });
     return () => {
       current = false;
     };
   }, [unitId]);
-  const known = personalized?.unitId === unitId ? personalized.value : undefined;
+  if (personalized?.unitId !== unitId) return <QuizHomeLoading />;
+  const known = personalized.value;
 
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
@@ -413,6 +409,25 @@ function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
           지난 문제 보기
         </button>
       </div>
+    </div>
+  );
+}
+
+// 시안의 가장 조용한 로딩이다. 대화의 기다리는 말풍선을 키워 퀴즈 홈 자리에 둔다.
+function QuizHomeLoading() {
+  return (
+    <div aria-busy className="my-auto flex flex-col items-center p-1 pb-20">
+      <span
+        aria-hidden
+        className="grid h-[60px] w-[88px] place-items-center rounded-[22px_22px_22px_8px] bg-bg [&_.typing]:gap-[7px] [&_.typing]:p-0 [&_.typing_i]:size-2.5"
+      >
+        <span className="typing">
+          <i />
+          <i />
+          <i />
+        </span>
+      </span>
+      <span className="sr-only">퀴즈 홈을 불러오고 있어요</span>
     </div>
   );
 }
