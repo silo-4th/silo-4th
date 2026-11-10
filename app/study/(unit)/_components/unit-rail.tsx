@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { SUBJECT_NAME } from "@/lib/subject";
 
 type Unit = { id: string; title: string };
 
@@ -54,11 +55,14 @@ export function UnitRail({ units, currentId }: { units: Unit[]; currentId: strin
                   href={`/study/${id}`}
                   aria-current={id === currentId ? "page" : undefined}
                   onClick={close}
-                  className="group flex aspect-[16/7] flex-col justify-end rounded-md bg-[#3a3d41] p-3 text-[17px] leading-tight font-extrabold tracking-[-0.03em] text-white outline-3 outline-offset-3 outline-transparent transition-[outline-color] hover:outline-green focus-visible:outline-white aria-[current=page]:bg-green-600"
+                  className="group flex aspect-[16/7] flex-col justify-end gap-1 rounded-md bg-[#3a3d41] p-3 text-white outline-3 outline-offset-3 outline-transparent transition-[outline-color] hover:outline-green focus-visible:outline-white aria-[current=page]:bg-green-600"
                 >
-                  <span>
+                  <span className="text-[17px] leading-tight font-extrabold tracking-[-0.03em]">
                     <span aria-hidden="true">{index + 1}. </span>
                     {title}
+                  </span>
+                  <span className="mt-1.5 border-t border-white/20 pt-2 text-[11.5px] font-medium opacity-85 group-aria-[current=page]:border-white/30 group-aria-[current=page]:opacity-100">
+                    {SUBJECT_NAME}
                   </span>
                 </Link>
               </li>
