@@ -19,6 +19,7 @@ import { getDb } from "@/lib/db";
 import { concept, message, question, questionConcept, questionSession, unit } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { type AnswerTone, DEFAULT_TONE, isAnswerTone } from "@/lib/answer-tone";
+import { SELECTED_TEXT_MAX_LENGTH } from "@/lib/drag-menu";
 import { streamAnswer } from "@/lib/llm/answer";
 import { classifyQuestion, summarizeQuestion } from "@/lib/llm/tagging";
 import { type SessionSummary, type SessionTurn, toSessionList } from "@/lib/question-sessions";
@@ -26,7 +27,15 @@ import { knownConceptIds, normalizeKeywords } from "@/lib/question-tags";
 import { studyDay } from "@/lib/study-day";
 import { isUuid } from "@/lib/uuid";
 
-export type AskInput = { questionId: string; sessionId: string; unitId: string; content: string; tone: AnswerTone };
+// selected는 본문에서 드래그해 물어본 문장과, 그 문장이 있던 절의 개념이다.
+export type AskInput = {
+  questionId: string;
+  sessionId: string;
+  unitId: string;
+  content: string;
+  tone: AnswerTone;
+  selected?: { text: string; conceptId?: string };
+};
 
 export type Claim =
   // 이 요청이 AI 답을 받아 저장해야 한다.
@@ -35,6 +44,8 @@ export type Claim =
   // 같은 질문 ID로 온 다른 요청이 아직 답을 받고 있다.
   | { kind: "pending" }
   | { kind: "unknown-unit" }
+  // 드래그한 절의 개념이 열린 단원의 개념이 아니다.
+  | { kind: "unknown-section" }
   | { kind: "not-yours" };
 
 // DB 오류 메시지는 쿼리 값으로 질문 원문과 AI 답을 담는다. 값을 지운 메시지만 Sentry로 보낸다.
@@ -50,24 +61,53 @@ const PAST_SUMMARY_LIMIT = 5;
 // 요청 본문은 화면을 거치지 않고도 보낼 수 있어 타입과 달리 아무 값이나 올 수 있다.
 export function parseAskInput(input: unknown): AskInput | undefined {
   if (typeof input !== "object" || input === null) return undefined;
-  const { questionId, sessionId, unitId, content, tone = DEFAULT_TONE } = input as Record<string, unknown>;
+  const {
+    questionId,
+    sessionId,
+    unitId,
+    content,
+    tone = DEFAULT_TONE,
+    selectedText,
+    sectionConceptId,
+  } = input as Record<string, unknown>;
   if (!isUuid(questionId) || !isUuid(sessionId)) return undefined;
   if (typeof unitId !== "string" || typeof content !== "string") return undefined;
   if (!content.trim() || content.length > MAX_QUESTION_LENGTH) return undefined;
   // 말투는 정해 둔 id만 받는다. 학습자가 보낸 글이 답변 프롬프트에 들어가지 않게 한다.
   if (!isAnswerTone(tone)) return undefined;
-  return { questionId, sessionId, unitId, content, tone };
+  const asked = { questionId, sessionId, unitId, content, tone };
+  if (selectedText === undefined) return sectionConceptId === undefined ? asked : undefined;
+  if (typeof selectedText !== "string" || !selectedText.trim() || selectedText.length > SELECTED_TEXT_MAX_LENGTH) {
+    return undefined;
+  }
+  if (sectionConceptId !== undefined && (typeof sectionConceptId !== "string" || !sectionConceptId)) return undefined;
+  return { ...asked, selected: { text: selectedText, conceptId: sectionConceptId } };
+}
+
+// 드래그한 문장은 답변 프롬프트가 <selected_text>로 알아본다. 분류와 요약도 그 문장을 보고 무엇을 물었는지 안다.
+function askedText(content: string, selectedText: string | null) {
+  return selectedText === null ? content : `<selected_text>\n${selectedText}\n</selected_text>\n\n${content}`;
 }
 
 // 새 질문이면 저장하고, 같은 질문 ID가 다시 왔으면 저장된 상태를 보고 이 요청이 할 일을 정한다.
 // 세션은 그 세션의 첫 질문과 함께 저장한다. 이미 있는 질문이면 처음 저장한 세션에 그대로 둔다.
+// 드래그한 절의 개념은 질문 문구만으로 분류할 수 없으므로 분류 대신 질문과 함께 연결한다.
 export async function claimQuestion(
   learnerId: string,
-  { questionId, sessionId, unitId, content }: AskInput,
+  { questionId, sessionId, unitId, content, selected }: AskInput,
 ): Promise<Claim> {
   const db = getDb();
   const [opened] = await db.select({ id: unit.id }).from(unit).where(eq(unit.id, unitId));
   if (!opened) return { kind: "unknown-unit" };
+  const conceptId = selected?.conceptId;
+  if (conceptId) {
+    // 절 개념은 화면을 거치지 않고도 보낼 수 있어, 다른 단원의 절이 질문한 절로 남지 않게 막는다.
+    const [section] = await db
+      .select({ id: concept.id })
+      .from(concept)
+      .where(and(eq(concept.id, conceptId), eq(concept.unitId, unitId)));
+    if (!section) return { kind: "unknown-section" };
+  }
 
   const askedAt = new Date();
   const saved = await db
@@ -93,7 +133,8 @@ export async function claimQuestion(
         .returning({ id: question.id });
       // 이미 있는 질문이면 이 요청이 새로 만든 세션도 남기지 않는다.
       if (!row) tx.rollback();
-      await tx.insert(message).values({ questionId, seq: 1, role: "user", content });
+      await tx.insert(message).values({ questionId, seq: 1, role: "user", content, selectedText: selected?.text });
+      if (conceptId) await tx.insert(questionConcept).values({ questionId, conceptId });
       return "created";
     })
     .catch((error: unknown) => {
@@ -154,7 +195,8 @@ export async function answerQuestion(
       .select({
         learnerId: question.learnerId,
         unitContent: unit.content,
-        question: message.content,
+        content: message.content,
+        selectedText: message.selectedText,
         sessionId: question.sessionId,
         askedAt: question.askedAt,
         // 답 앞의 DB 왕복마다 첫 글자가 늦어지므로, 다시 시도할 때 쓸 개념 연결을 이 조회에서 함께 읽는다.
@@ -167,26 +209,28 @@ export async function answerQuestion(
       .innerJoin(unit, eq(unit.id, question.unitId))
       .where(and(eq(message.questionId, questionId), eq(message.seq, 1)));
     if (!asked) throw new Error("답할 질문을 찾지 못했다.");
-    const history = await db
-      .select({ role: message.role, content: message.content })
+    const questionText = askedText(asked.content, asked.selectedText);
+    const earlier = await db
+      .select({ role: message.role, content: message.content, selectedText: message.selectedText })
       .from(message)
       .innerJoin(question, eq(question.id, message.questionId))
       .where(
         and(eq(question.sessionId, asked.sessionId), eq(question.status, "ok"), lt(question.askedAt, asked.askedAt)),
       )
       .orderBy(asc(question.askedAt), asc(question.id), asc(message.seq));
+    const history = earlier.map(({ role, content, selectedText }) => ({ role, content: askedText(content, selectedText) }));
     const pastQuestions = await pastQuestionsFor({
       questionId,
       learnerId: asked.learnerId,
       sessionId: asked.sessionId,
-      content: asked.question,
+      content: questionText,
       linkedConceptIds: asked.linkedConceptIds ?? [],
     });
 
     let reply: string;
     try {
       reply = await streamAnswer(
-        { unitContent: asked.unitContent, history, question: asked.question, pastQuestions, tone },
+        { unitContent: asked.unitContent, history, question: questionText, pastQuestions, tone },
         onText,
       );
     } catch (error) {
@@ -200,7 +244,7 @@ export async function answerQuestion(
       await tx.insert(message).values({ questionId, seq: 2, role: "assistant", content: reply });
       await tx.update(question).set({ status: "ok", answeredAt: new Date() }).where(eq(question.id, questionId));
     });
-    return { status: "ok", question: asked.question, answer: reply };
+    return { status: "ok", question: questionText, answer: reply };
   } catch (error) {
     await markError(questionId);
     throw error;
@@ -324,7 +368,13 @@ export async function sessionTurns(learnerId: string, sessionId: string): Promis
   if (!owned) return undefined;
   const answer = alias(message, "answer");
   return db
-    .select({ questionId: question.id, unitId: question.unitId, content: message.content, answer: answer.content })
+    .select({
+      questionId: question.id,
+      unitId: question.unitId,
+      content: message.content,
+      selectedText: message.selectedText,
+      answer: answer.content,
+    })
     .from(question)
     .innerJoin(message, and(eq(message.questionId, question.id), eq(message.seq, 1)))
     .leftJoin(answer, and(eq(answer.questionId, question.id), eq(answer.seq, 2)))
