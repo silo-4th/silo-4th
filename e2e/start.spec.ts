@@ -1,7 +1,6 @@
 import { expect, type Page, test as guest } from "@playwright/test";
+import { koreanToday } from "@/lib/exam-date";
 import { daysFromNow, test } from "./fixtures";
-
-const CONSENT_NOTICE = "기록을 저장해야 학습을 이어 갈 수 있어요";
 
 function onStudy(url: URL) {
   return url.pathname === "/study" || url.pathname.startsWith("/study/");
@@ -12,38 +11,39 @@ function startScreen(page: Page) {
     examDate: page.getByLabel("시험 날짜"),
     consent: page.getByRole("checkbox"),
     submit: page.getByRole("button", { name: "시작하기" }),
-    // Next.js의 경로 안내 영역도 alert라서 문구로 고른다.
-    consentNotice: page.getByRole("alert").filter({ hasText: CONSENT_NOTICE }),
   };
 }
 
 test.describe("저장에 동의하지 않은 학습자", () => {
   test.use({ consented: false });
 
-  test("TC-28 시작 화면에서 시험 날짜를 고르고 저장에 동의해야 학습 화면으로 넘어가요", async ({ page }) => {
+  test("TC-28 시작 화면에서 시험 날짜를 고르면 켜져 있는 저장 동의 그대로 학습 화면으로 바로 가요", async ({ page }) => {
     const screen = startScreen(page);
 
     await page.goto("/start");
+    await expect(screen.consent).toBeChecked();
+
     await screen.examDate.fill(daysFromNow(30));
-    await screen.submit.click();
-
-    await expect(screen.consentNotice).toBeVisible();
-    await expect(page).toHaveURL("/start");
-
-    await screen.consent.check();
     await screen.submit.click();
 
     await expect(page).toHaveURL(onStudy);
   });
 
-  test("TC-29 저장에 동의하지 않으면 안내가 보이고 시작 화면에 머물러요", async ({ page }) => {
+  test("TC-29 시험 날짜를 지우거나 저장 동의를 끄면 시작하기 버튼이 꺼지고 시작 화면에 머물러요", async ({ page }) => {
     const screen = startScreen(page);
 
     await page.goto("/start");
-    await screen.examDate.fill(daysFromNow(30));
-    await screen.submit.click();
+    await expect(screen.examDate).toHaveValue(koreanToday(new Date()));
+    await expect(screen.submit).toBeEnabled();
 
-    await expect(screen.consentNotice).toBeVisible();
+    await screen.examDate.fill("");
+    await expect(screen.submit).toBeDisabled();
+
+    await screen.examDate.fill(daysFromNow(30));
+    await expect(screen.submit).toBeEnabled();
+
+    await screen.consent.uncheck();
+    await expect(screen.submit).toBeDisabled();
     await expect(page).toHaveURL("/start");
   });
 });

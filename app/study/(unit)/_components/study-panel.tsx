@@ -37,10 +37,12 @@ import {
   settleQuizSet,
   startQuizSet,
 } from "@/lib/quiz-tab";
+import { BetaNotice } from "./beta-notice";
 import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
 import { QuizHomeArt } from "./quiz-home-art";
+import { useSelectionAsk } from "./selection-ask";
 
 const TABS = [
   { id: "agent", label: "AI 에이전트" },
@@ -101,6 +103,17 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   const [quiz, sendQuiz] = useQuizSet(learnerId);
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
   const peek = useRef<HTMLButtonElement>(null);
+  const selectionAsks = useSelectionAsk();
+
+  // 드래그 메뉴로 보낸 질문의 답이 보이게, 패널이 닫혀 있거나 퀴즈 탭이 열려 있어도 에이전트 탭을 연다.
+  useEffect(
+    () =>
+      selectionAsks.listen(() => {
+        setOpened(true);
+        setShown("agent");
+      }),
+    [selectionAsks],
+  );
 
   // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 새로 보이는 버튼으로 포커스를 옮긴다.
   function closePanel() {
@@ -206,43 +219,14 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
               if (!next.betaNotice) tabs.current.get("quiz")?.focus();
             }}
           />
-          <BetaNotice open={quiz.betaNotice} onClose={() => sendQuiz({ type: "dismiss" })} />
+          <BetaNotice open={quiz.betaNotice} onClose={() => sendQuiz({ type: "dismiss" })}>
+            지금은 하루에 한 묶음만 풀 수 있어요.
+            <br />
+            새벽 4시가 지나면 새 문제를 풀 수 있어요.
+          </BetaNotice>
         </div>
       </aside>
     </>
-  );
-}
-
-// 확인이나 Esc로 닫으면 close 이벤트가 오고, 브라우저가 모달을 열기 전 버튼으로 포커스를 돌려준다.
-function BetaNotice({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (open && !dialog?.open) dialog?.showModal();
-    if (!open && dialog?.open) dialog.close();
-  }, [open]);
-
-  return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="beta-notice-title"
-      onClose={onClose}
-      className="m-auto w-[min(320px,calc(100%-32px))] rounded-2xl bg-white p-6 text-center text-ink backdrop:bg-[rgba(18,19,20,0.35)]"
-    >
-      <h2 id="beta-notice-title" className="text-[19px] font-bold tracking-tight">
-        아직 베타 단계예요
-      </h2>
-      <p className="mt-2 text-[13.5px] leading-relaxed text-gray">
-        지금은 하루에 한 묶음만 풀 수 있어요.
-        <br />
-        새벽 4시가 지나면 새 문제를 풀 수 있어요.
-      </p>
-      <form method="dialog" className="mt-5">
-        <button type="submit" className="btn btn-dark btn-lg btn-block">
-          확인
-        </button>
-      </form>
-    </dialog>
   );
 }
 
@@ -291,13 +275,9 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
       {tab.stage === "idle" && active && !pastShown && (
         <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
       )}
-      {waiting && (
-        <div className="flex justify-center pt-8">
-          <Mascot size={88} spin />
-        </div>
-      )}
+      {waiting && <QuizSkeleton />}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
-      <p role="status" className={waiting ? "text-center text-sm text-gray" : "sr-only"}>
+      <p role="status" className="sr-only">
         {tab.stage === "loading" && "문제를 만들고 있어요"}
         {tab.stage === "resuming" && "풀던 문제를 불러오고 있어요"}
       </p>
@@ -430,6 +410,25 @@ function QuizHomeLoading() {
         </span>
       </span>
       <span className="sr-only">퀴즈 홈을 불러오고 있어요</span>
+    </div>
+  );
+}
+
+// 진행 막대, 개념 칩, 문제 두 줄, 보기 4칸으로 문제 카드 모양을 그린다.
+function QuizSkeleton() {
+  return (
+    <div aria-hidden className="quiz-skel">
+      <div className="quiz-strip">
+        {Array.from({ length: SET_SIZE }, (_, index) => (
+          <i key={index} />
+        ))}
+      </div>
+      <i className="skel mt-5 h-6 w-[92px]" />
+      <i className="skel skel-line mt-3.5 w-[92%]" />
+      <i className="skel skel-line mt-2.5 w-[64%]" />
+      {[0, 1, 2, 3].map((index) => (
+        <i key={index} className="skel quiz-skel-opt" />
+      ))}
     </div>
   );
 }

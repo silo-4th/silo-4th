@@ -1,45 +1,84 @@
 "use client";
 
-import { useActionState, useId } from "react";
+import { Calendar, LoaderCircle } from "lucide-react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { submitStart } from "./actions";
 
-export function StartForm() {
+export function StartForm({ today }: { today: string }) {
   const [state, formAction, pending] = useActionState(submitStart, null);
+  const [examDate, setExamDate] = useState(today);
+  const [consented, setConsented] = useState(true);
+  const formRef = useRef<HTMLFormElement>(null);
   const examDateId = useId();
+  const ready = examDate !== "" && consented;
+
+  // 화면이 뜨자마자 입력하면 React가 넘겨받기 전의 입력은 상태에 들어오지 않는다. 넘겨받을 때 입력칸의 실제 값을 다시 읽는다.
+  useEffect(() => {
+    const fields = formRef.current?.elements;
+    if (!fields) return;
+    const date = fields.namedItem("examDate");
+    const consent = fields.namedItem("consent");
+    if (date instanceof HTMLInputElement) setExamDate(date.value);
+    if (consent instanceof HTMLInputElement) setConsented(consent.checked);
+  }, []);
 
   return (
-    // 폼은 제출이 끝나면 처음 값으로 돌아간다. 낸 값을 처음 값으로 두어 안내를 본 뒤에도 입력이 남는다.
-    <form action={formAction} className="mt-7 flex flex-col">
-      <div className="mb-3.5 flex flex-col gap-1.5">
+    <form ref={formRef} action={formAction}>
+      <div className="mb-5 flex flex-col gap-2">
         <label htmlFor={examDateId} className="text-[13px] font-semibold text-ink-2">
           시험 날짜
         </label>
-        <input
-          id={examDateId}
-          type="date"
-          name="examDate"
-          required
-          defaultValue={state?.examDate}
-          className="input"
-        />
+        <span className="date-field">
+          <Calendar size={17} aria-hidden className="date-field-ico" />
+          <input
+            id={examDateId}
+            type="date"
+            name="examDate"
+            required
+            value={examDate}
+            disabled={pending}
+            onChange={(event) => setExamDate(event.target.value)}
+            onClick={(event) => {
+              try {
+                event.currentTarget.showPicker();
+              } catch {
+                // 칸 어디를 눌러도 달력이 열리게 한다. 지원하지 않는 브라우저는 스스로 연다.
+              }
+            }}
+            className="input tracking-normal"
+          />
+        </span>
       </div>
-      <label className="flex items-start gap-2.5 rounded-md border border-line p-3.5 text-sm text-ink-2 transition-colors has-checked:border-green has-checked:bg-green-25">
+      <label className="start-consent">
         <input
           type="checkbox"
           name="consent"
-          defaultChecked={state?.consented}
-          className="mt-0.5 size-4 flex-none accent-green"
+          checked={consented}
+          disabled={pending}
+          onChange={(event) => setConsented(event.target.checked)}
         />
-        공부하며 남긴 질문과 확인 결과를 저장하고 분석하는 데 동의해요
+        학습 기록 저장과 분석에 동의해요
       </label>
-      {state && (
-        <p role="alert" className="mt-3 text-sm text-red">
-          {state.notice}
-        </p>
-      )}
-      <button type="submit" disabled={pending} className="btn btn-primary btn-lg btn-block mt-7">
-        시작하기
-      </button>
+      <div className="mt-4 flex flex-col items-center gap-5 [@media(max-height:760px)_and_(min-width:861px)]:gap-4">
+        {pending ? (
+          <button type="submit" disabled aria-busy="true" className="btn btn-dark btn-lg btn-block tracking-normal disabled:opacity-100">
+            <LoaderCircle size={18} aria-hidden className="animate-[spin_0.8s_linear_infinite] motion-reduce:animate-[spin_2s_linear_infinite]" />
+            저장하는 중…
+          </button>
+        ) : (
+          <button type="submit" disabled={!ready} className="btn btn-dark btn-lg btn-block tracking-normal">
+            시작하기
+          </button>
+        )}
+        {state && !pending && (
+          <p
+            role="alert"
+            className="-mt-1 w-full animate-[notice-in_0.25s_ease-out] rounded-md bg-red-50 px-4 py-3 text-center text-sm leading-normal font-medium text-red"
+          >
+            {state.notice}
+          </p>
+        )}
+      </div>
     </form>
   );
 }

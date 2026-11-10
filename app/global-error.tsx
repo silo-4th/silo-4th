@@ -4,6 +4,8 @@ import * as Sentry from "@sentry/nextjs";
 import Image from "next/image";
 import { useEffect } from "react";
 import grubby from "@/app/_assets/mascot-grubby.webp";
+import { FullPageFail } from "@/app/_components/full-page-fail";
+import { APP_TITLE } from "@/lib/brand";
 import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 
@@ -16,19 +18,23 @@ export default function GlobalError({ error, retry }: { error: unknown; retry: (
 
   return (
     <html lang="ko" className="h-full antialiased">
-      <body className="flex min-h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <span aria-hidden className="mascot grubby">
-          <span className="grubby-body">
-            <Image src={grubby} alt="" width={224} height={160} draggable={false} />
-            <i className="mascot-lid l" />
-            <i className="mascot-lid r" />
-          </span>
-        </span>
-        <h2 className="text-xl font-bold">문제가 생겼어요.</h2>
-        <p className="text-gray">잠시 뒤에 다시 시도해 주세요.</p>
-        <button type="button" onClick={() => retry()} className="btn btn-dark mt-2">
-          다시 시도
-        </button>
+      <title>{APP_TITLE}</title>
+      <body className="min-h-full flex flex-col">
+        <FullPageFail
+          art={
+            <span aria-hidden className="mascot grubby">
+              <span className="grubby-body">
+                <Image src={grubby} alt="" width={224} height={160} draggable={false} />
+                <i className="mascot-lid l" />
+                <i className="mascot-lid r" />
+              </span>
+            </span>
+          }
+          title="문제가 생겼어요"
+          description="잠시 뒤 다시 시도해 주세요."
+          actionLabel="다시 시도"
+          onAction={retry}
+        />
       </body>
     </html>
   );

@@ -20,7 +20,7 @@ type MascotProps = { size: number; live?: boolean; spin?: boolean; mood?: Mascot
 
 export function Mascot({ size, live = false, spin = false, mood = "smile", hoverMood }: MascotProps) {
   const face = (src: (typeof FACES)[MascotMood], className?: string) => (
-    <Image src={src} width={size} height={size} alt="" draggable={false} className={className} />
+    <Image src={src} width={size} height={size} alt="" draggable={false} unoptimized className={className} />
   );
   const action = mood === "wow" ? grin : open;
   if (spin) {
