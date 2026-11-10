@@ -340,20 +340,20 @@ test("TC-299 채점하는 동안 답을 내는 버튼이 그 자리에서 채점
   await page.goto(`/study/${unit.id}`);
   const screen = recallScreen(page);
   await screen.getByRole("button", { name: "시작하기" }).click();
-  const card = screen.getByRole("region", { name: "퀴즈" });
-  await card.getByRole("textbox", { name: "빈칸에 들어갈 말" }).fill("HAVING");
-  await card.getByRole("button", { name: "확실해요" }).click();
+  await screen.getByRole("textbox", { name: "빈칸에 들어갈 말" }).fill("HAVING");
+  await screen.getByRole("button", { name: "확실해요" }).click();
   await expect(screen.getByRole("button", { name: "이 문제 건너뛰기" })).toBeVisible();
-  const check = card.getByRole("button", { name: "정답 확인" });
+  const check = screen.getByRole("button", { name: "결과 보기" });
   const checkBox = await check.boundingBox();
   await check.click();
 
-  const busy = card.getByRole("button", { name: "채점하는 중…" });
+  const busy = screen.getByRole("button", { name: "채점하는 중…" });
   await expect(busy).toBeDisabled();
   await expect(busy.locator("svg")).toBeVisible();
   expect(await busy.boundingBox()).toEqual(checkBox);
   await expect(screen.getByRole("button", { name: "이 문제 건너뛰기" })).toHaveCount(0);
 
   release();
-  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+  await expect(screen.getByRole("heading", { name: "1개 모두 맞혔어요" })).toBeVisible();
+  await expect(screen.getByRole("region", { name: "채점 결과와 해설" })).toHaveCount(0);
 });
