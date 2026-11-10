@@ -324,3 +324,36 @@ test("TC-276 꺼내 먹기 세트를 준비하는 동안 제목 아래에 준비
     await expect(screen.getByText(conceptTitle, { exact: true })).toBeVisible();
   }
 });
+
+test("TC-299 채점하는 동안 답을 내는 버튼이 그 자리에서 채점하는 중…으로 바뀌어 눌리지 않고, 이 문제 건너뛰기가 숨겨져요", async ({ page, learnerId }) => {
+  const { unit } = await seedSet(learnerId, [{ format: "blank", reason: "read_no_question" }]);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/quiz-attempts", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await held;
+    return route.continue();
+  });
+
+  await page.goto(`/study/${unit.id}`);
+  const screen = recallScreen(page);
+  await screen.getByRole("button", { name: "시작하기" }).click();
+  const card = screen.getByRole("region", { name: "퀴즈" });
+  await card.getByRole("textbox", { name: "빈칸에 들어갈 말" }).fill("HAVING");
+  await card.getByRole("button", { name: "확실해요" }).click();
+  await expect(screen.getByRole("button", { name: "이 문제 건너뛰기" })).toBeVisible();
+  const check = card.getByRole("button", { name: "정답 확인" });
+  const checkBox = await check.boundingBox();
+  await check.click();
+
+  const busy = card.getByRole("button", { name: "채점하는 중…" });
+  await expect(busy).toBeDisabled();
+  await expect(busy.locator("svg")).toBeVisible();
+  expect(await busy.boundingBox()).toEqual(checkBox);
+  await expect(screen.getByRole("button", { name: "이 문제 건너뛰기" })).toHaveCount(0);
+
+  release();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+});
