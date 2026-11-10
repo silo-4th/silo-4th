@@ -20,6 +20,8 @@ export type RecallSetView = {
     position: number;
     reason: (typeof RECALL_REASONS)[number];
     problem: ProblemView;
+    // 입구 줄 오른쪽에 개념이 나온 단원 이름을 보여 준다.
+    unitTitle?: string;
     section?: SectionAddress;
     // 이미 푼 문항에만 있다. 이어 풀 때 결과에 처음 풀이를 그대로 보여 준다.
     answered?: { submitted: AttemptInput; result: AttemptResult };
@@ -79,6 +81,7 @@ export async function showTodaySet(learnerId: string, today: string): Promise<Re
         reason: recallItem.reason,
         problem: problemViewColumns,
         unitId: concept.unitId,
+        unitTitle: unit.title,
         content: unit.content,
         attempt: {
           id: quizAttempt.id,

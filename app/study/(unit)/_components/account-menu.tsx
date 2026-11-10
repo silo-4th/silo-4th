@@ -5,7 +5,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import face from "@/app/_assets/mascot-plain.png";
 import { SignOutButton } from "@/app/_components/sign-out-button";
 
-export function AccountMenu({ name }: { name: string }) {
+// 어두운 학습 헤더에서만 마우스를 올리면 아바타 둘레를 밝힌다. 꺼내 먹기의 흰 헤더는 light로 그린다.
+export function AccountMenu({ name, light = false }: { name: string; light?: boolean }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -38,7 +39,7 @@ export function AccountMenu({ name }: { name: string }) {
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
-        className="-mr-1 flex h-10 items-center rounded-full p-1 transition-colors hover:bg-[#2a2c2e]"
+        className={`-mr-1 inline-flex h-10 items-center rounded-full p-1 transition-colors ${light ? "" : "hover:bg-[#2a2c2e]"}`}
       >
         <Avatar className="size-8" />
       </button>

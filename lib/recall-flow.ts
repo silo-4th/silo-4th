@@ -13,19 +13,24 @@ export type RecallFlow =
   | { stage: "problem"; set: RecallSetView; index: number; answers: RecallAnswer[] }
   | { stage: "result"; set: RecallSetView; answers: RecallAnswer[] };
 
+// finish는 마지막이 아닌 문제에서 결과 보기를 누를 때 보낸다. 남은 문항은 건너뛴 것으로 두고, saved에 서버에 저장한 풀이가 있으면 그것을 쓴다.
 export type RecallFlowEvent =
   | { type: "start" }
   | { type: "answered"; submitted: AttemptInput; result?: AttemptResult }
-  | { type: "skip" };
+  | { type: "skip" }
+  | { type: "finish"; saved?: RecallAnswer[] };
 
 type ProblemFlow = Extract<RecallFlow, { stage: "problem" }>;
 
-// 이미 푼 문항은 서버에 저장된 풀이로 결과에 모으고 다시 내지 않는다. 건너뛴 문항은 저장하지 않아 다시 낸다.
+function ordered(set: RecallSetView, answers: RecallAnswer[]): RecallAnswer[] {
+  return set.items.flatMap((item) => answers.find((answer) => answer.itemId === item.id) ?? []);
+}
+
+// 이미 푼 문항은 서버에 저장된 풀이로 결과에 모으고 다시 내지 않는다. 저장하지 못한 채 건너뛴 문항은 다시 낸다.
 function openFrom(set: RecallSetView, answers: RecallAnswer[], from: number): RecallFlow {
   const index = set.items.findIndex((item, at) => at >= from && !item.answered);
   if (index !== -1) return { stage: "problem", set, index, answers };
-  const ordered = set.items.flatMap((item) => answers.find((answer) => answer.itemId === item.id) ?? []);
-  return { stage: "result", set, answers: ordered };
+  return { stage: "result", set, answers: ordered(set, answers) };
 }
 
 function savedAnswers(set: RecallSetView): RecallAnswer[] {
@@ -41,6 +46,37 @@ function moveOn(flow: ProblemFlow, answer: RecallAnswer): RecallFlow {
   return openFrom(flow.set, [...flow.answers, answer], flow.index + 1);
 }
 
+function remainingItems(flow: ProblemFlow): RecallItemView[] {
+  return flow.set.items.filter((item, at) => at >= flow.index && !item.answered);
+}
+
+// 서버에 풀이가 없는 문항이다. 지금 문제부터 풀지 않은 문항과, 앞에서 건너뛰었지만 저장하지 못한 문항이다.
+// 결과 보기를 누르면 이 문항들을 잘 모르겠어요 풀이로 저장한다.
+export function unsavedItems(flow: ProblemFlow): RecallItemView[] {
+  const skipped = new Set(flow.answers.flatMap((answer) => (answer.kind === "skipped" ? answer.itemId : [])));
+  return flow.set.items.filter((item, at) => skipped.has(item.id) || (at >= flow.index && !item.answered));
+}
+
+// 건너뛴 문항도 잘 모르겠어요 풀이로 저장해, 결과에 정답과 해설을 보여 주고 이어 풀 때 다시 내지 않는다.
+export function skippedRequest(item: RecallItemView): AttemptInput {
+  return {
+    attemptId: crypto.randomUUID(),
+    problemId: item.problem.id,
+    recallItemId: item.id,
+    chosenIndex: null,
+    answerText: null,
+    confidence: null,
+    hintUsed: false,
+    dontKnow: true,
+  };
+}
+
+// 저장한 풀이가 앞의 답보다 먼저 오게 두어, 앞에서 저장하지 못하고 건너뛴 문항도 저장한 풀이로 바꾼다.
+function finish(flow: ProblemFlow, saved: RecallAnswer[] = []): RecallFlow {
+  const rest = remainingItems(flow).map((item): RecallAnswer => ({ itemId: item.id, kind: "skipped" }));
+  return { stage: "result", set: flow.set, answers: ordered(flow.set, [...saved, ...flow.answers, ...rest]) };
+}
+
 // 단계마다 받을 수 있는 이벤트만 상태를 바꾸고, 나머지는 그대로 둔다.
 export function advanceRecall(flow: RecallFlow, event: RecallFlowEvent): RecallFlow {
   switch (flow.stage) {
@@ -50,6 +86,7 @@ export function advanceRecall(flow: RecallFlow, event: RecallFlowEvent): RecallF
     case "problem": {
       const item = flow.set.items[flow.index];
       if (!item || event.type === "start") return flow;
+      if (event.type === "finish") return finish(flow, event.saved);
       return moveOn(
         flow,
         event.type === "skip"
@@ -85,6 +122,7 @@ export function entryOf(items: RecallItemView[]) {
   const rows = items.map((item) => ({
     id: item.id,
     conceptTitle: item.problem.conceptTitle,
+    unitTitle: item.unitTitle,
     reason: ENTRY_REASON[item.reason],
   }));
   return { rows, summary: `${rows.length}개를 꺼내 보면 플러키에게 쿠키를 줄 수 있어요` };
@@ -129,11 +167,6 @@ export async function openTodayRecall(): Promise<RecallSetView | null> {
   } catch {
     return null;
   }
-}
-
-// 절로 간 기록은 학습 화면으로 가는 길을 막지 않는다. 화면을 떠나도 요청이 끝나도록 keepalive로 보낸다.
-export function recordSectionOpened(itemId: string) {
-  void post(`/api/recall-items/${itemId}/opened-section`, { keepalive: true });
 }
 
 // 네트워크가 잠깐 끊겨 시작 기록이 빠지면 뒤따르는 완료 기록도 서버가 거절하므로, 실패한 기록은 잠시 뒤 다시 보낸다.

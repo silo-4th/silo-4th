@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AttemptInput, AttemptResult } from "@/lib/quiz-attempts";
-import type { RecallAnswer } from "@/lib/recall-flow";
+import { type RecallAnswer, advanceRecall, startRecall } from "@/lib/recall-flow";
 import { resultCards, resultSubtitle, resultTitle } from "@/lib/recall-result";
 import type { RecallSetView } from "@/lib/recall-sets";
 
@@ -81,6 +81,30 @@ function cardsOf(...outcomes: Outcome[]) {
   );
 }
 
+const CHOICES = ["WHERE", "HAVING", "ORDER BY", "LIMIT"];
+
+function mcqItem(position: number): RecallSetView["items"][number] {
+  const base = item(position);
+  return { ...base, problem: { ...base.problem, format: "mcq", choices: CHOICES } };
+}
+
+function blankItem(position: number): RecallSetView["items"][number] {
+  const base = item(position);
+  return { ...base, problem: { ...base.problem, format: "blank" } };
+}
+
+function mcqResult(isCorrect: boolean): AttemptResult {
+  return { outcome: "graded", isCorrect, answer: { choices: CHOICES.map((text) => ({ text })), answerIndex: 1 }, explanation: "해설" };
+}
+
+function blankResult(isCorrect: boolean): AttemptResult {
+  return { outcome: "graded", isCorrect, answer: { accepted: ["HAVING"] }, explanation: "해설" };
+}
+
+function answeredOf(position: number) {
+  return { submitted: submitted(position, "모범 답안", "sure"), result: result(true) };
+}
+
 describe("꺼내 먹기 결과", () => {
   it("TC-220 꺼내 먹기 결과 제목은 틀린 문항, 헷갈린 문항, 채점하지 못한 문항 수에 따라 네 가지 중 하나를 골라요", () => {
     const a = cardsOf(
@@ -116,18 +140,16 @@ describe("꺼내 먹기 결과", () => {
     expect(resultSubtitle(c)).toBe("오늘은 새로운 내용으로 넘어가도 좋아요.");
   });
 
-  it("TC-222 문항 카드의 칩은 맞힘과 확신도, 건너뜀, 채점 여부에 따라 정해지고, 맞혔어요가 아닌 카드에만 공부하러 가기가 있어요", () => {
+  it("TC-290 꺼내 먹기 결과 카드의 칩은 맞힘과 확신도, 건너뜀, 채점 여부로 정해지고, 풀지 않고 결과를 연 문항은 틀렸어요로 세요", () => {
     const cards = cardsOf(
       { kind: "correct", confidence: "sure" },
       { kind: "correct", confidence: "unsure" },
       { kind: "correct", confidence: "guess" },
       { kind: "wrong" },
-      { kind: "skipped" },
       { kind: "dontKnow" },
+      { kind: "skipped" },
       { kind: "ungraded" },
-      { kind: "noResult" },
     );
-
     expect(cards.map((card) => card.chip)).toEqual([
       "맞혔어요",
       "맞았지만 헷갈렸어요",
@@ -136,27 +158,47 @@ describe("꺼내 먹기 결과", () => {
       "틀렸어요",
       "틀렸어요",
       "채점하지 못했어요",
-      "채점하지 못했어요",
     ]);
-    expect(cards.map((card) => card.studyLink)).toEqual([false, true, true, true, true, true, true, true]);
+
+    const set: RecallSetView = { id: "set-1", items: [1, 2, 3].map(item) };
+    const started = advanceRecall(startRecall(set), { type: "start" });
+    const finished = advanceRecall(advanceRecall(started, { type: "answered", ...answeredOf(1) }), { type: "finish" });
+    if (finished.stage !== "result") throw new Error("결과 단계여야 한다.");
+    const unfinished = resultCards(set, finished.answers);
+    expect(unfinished.map((card) => card.chip)).toEqual(["맞혔어요", "틀렸어요", "틀렸어요"]);
+    expect(resultTitle(unfinished)).toBe("3개 중 2개를 틀렸어요");
   });
 
-  it("TC-223 문항 카드는 맞히면 해설만, 틀리면 내 답과 정답과 해설을, 건너뛰면 내 답을 건너뛰었어요로, 채점하지 못하면 받은 만큼 보여 줘요", () => {
-    const [correct, wrong, dontKnow, ungraded, skipped, noResult] = cardsOf(
-      { kind: "correct", confidence: "sure" },
-      { kind: "wrong" },
-      { kind: "dontKnow" },
-      { kind: "ungraded" },
-      { kind: "skipped" },
-      { kind: "noResult" },
-    );
+  it("TC-291 꺼내 먹기 결과 카드는 맞혀도 지문, 내 답, 정답, 해설을 보여 주고, 객관식은 보기마다 정답과 내 답을 표시하며, 건너뛰거나 풀지 않고 넘긴 문항도 정답과 해설을 보여 줘요", () => {
+    const blankRight = blankItem(1);
+    const mcqWrong = mcqItem(2);
+    const skipped = blankItem(3);
+    const unfinished = mcqItem(4);
+    const noResult = blankItem(5);
+    const set: RecallSetView = { id: "set-1", items: [blankRight, mcqWrong, skipped, unfinished, noResult] };
+    const cards = resultCards(set, [
+      { itemId: blankRight.id, kind: "answered", submitted: { ...submitted(1, "HAVING", "sure") }, result: blankResult(true) },
+      { itemId: mcqWrong.id, kind: "answered", submitted: { ...submitted(2, null, "sure"), chosenIndex: 2 }, result: mcqResult(false) },
+      { itemId: skipped.id, kind: "answered", submitted: submitted(3, null, null, true), result: blankResult(false) },
+      { itemId: unfinished.id, kind: "answered", submitted: submitted(4, null, null, true), result: mcqResult(false) },
+      { itemId: noResult.id, kind: "answered", submitted: submitted(5, "WHERE", "sure") },
+    ]);
 
-    expect(correct).toMatchObject({ myAnswer: undefined, correctAnswer: undefined, explanation: "해설" });
-    expect(wrong).toMatchObject({ myAnswer: "틀린 답", correctAnswer: "모범 답안", explanation: "해설" });
-    expect(dontKnow?.myAnswer).toBe("건너뛰었어요");
-    expect(skipped?.myAnswer).toBe("건너뛰었어요");
-    expect(ungraded).toMatchObject({ myAnswer: "서술한 답", correctAnswer: "모범 답안", explanation: "해설" });
-    expect(noResult).toMatchObject({ myAnswer: "서술한 답", correctAnswer: undefined, explanation: undefined });
+    expect(cards.map((card) => card.stem)).toEqual(["문제 1", "문제 2", "문제 3", "문제 4", "문제 5"]);
+    const [right, wrong, skip, rest, none] = cards;
+    expect(right).toMatchObject({ myAnswer: "HAVING", correctAnswer: "HAVING", explanation: "해설" });
+    expect(wrong).toMatchObject({
+      choices: [
+        { text: "WHERE", mark: "dim", mine: false },
+        { text: "HAVING", mark: "right", mine: false },
+        { text: "ORDER BY", mark: "wrong", mine: true },
+        { text: "LIMIT", mark: "dim", mine: false },
+      ],
+      explanation: "해설",
+    });
+    expect(skip).toMatchObject({ myAnswer: "건너뛰었어요", correctAnswer: "HAVING", explanation: "해설" });
+    expect(rest).toMatchObject({ myAnswer: "건너뛰었어요", correctAnswer: "HAVING", explanation: "해설" });
+    expect(none).toMatchObject({ myAnswer: "WHERE", correctAnswer: undefined, explanation: undefined });
   });
 
   it("TC-224 틀린 카드의 내 답과 정답 중 긴 쪽이 30자를 넘으면 나란히 두지 않고 위아래로 쌓아요", () => {

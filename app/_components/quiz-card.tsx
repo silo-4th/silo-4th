@@ -61,10 +61,7 @@ function focusOnMount(element: HTMLElement | null) {
 type QuizCardProps = {
   problem: ProblemView;
   onNext: (solved: Solved) => void;
-  // 꺼내 먹기 문항을 풀 때만 넘긴다. 풀이를 그 문항의 풀이로 저장한다.
-  recallItemId?: string;
-  onSkip?: () => void;
-  // 꺼내 먹기의 마지막 문항처럼 다음 버튼이 다음 문제로 가지 않을 때 넘긴다.
+  // 묶음의 마지막 문제처럼 다음 버튼이 다음 문제로 가지 않을 때 넘긴다.
   nextLabel?: string;
   // 퀴즈 탭이 진행 게이지를 채우고 묶음 결과에 칩을 기억하려고 넘긴다.
   onGraded?: (solved: Solved) => void;
@@ -72,8 +69,8 @@ type QuizCardProps = {
   pinNext?: boolean;
 };
 
-// 퀴즈 탭과 꺼내 먹기가 함께 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
-export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onGraded, pinNext = false }: QuizCardProps) {
+// 퀴즈 탭의 문제 카드다. 꺼내 먹기는 시안이 달라 recall-problem.tsx를 쓴다. 문제가 바뀌면 부르는 쪽이 key를 바꿔 새 풀이로 시작한다.
+export function QuizCard({ problem, onNext, nextLabel, onGraded, pinNext = false }: QuizCardProps) {
   const [flow, setFlow] = useState<QuizFlow>(() => startQuizFlow(problem));
   const dispatch = (...events: QuizFlowEvent[]) => setFlow((current) => events.reduce(advanceQuizFlow, current));
 
@@ -83,7 +80,7 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
   useEffect(() => {
     if (!grading) return;
     let active = true;
-    void sendAttempt(recallItemId ? { ...grading.request, recallItemId } : grading.request).then((result) => {
+    void sendAttempt(grading.request).then((result) => {
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
       if (result) graded({ submitted: grading.request, result });
@@ -91,7 +88,7 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
     return () => {
       active = false;
     };
-  }, [grading, recallItemId]);
+  }, [grading]);
 
   function next() {
     if (flow.stage === "explanation") onNext({ submitted: flow.submitted, result: flow.result });
@@ -140,11 +137,6 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
           >
             정답 확인
           </button>
-          {onSkip && (
-            <button type="button" onClick={onSkip} className="mx-auto mt-2.5 block text-[13px] font-medium text-gray-3 hover:text-ink">
-              이 문제 건너뛰기
-            </button>
-          )}
         </CardAction>
       )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
