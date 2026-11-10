@@ -10,3 +10,11 @@ test("TC-214 첫 화면에서 Google로 계속하기를 누르면 Google 로그�
 
   await expect(page).toHaveURL((url) => url.hostname === GOOGLE_LOGIN_HOST);
 });
+
+test("TC-279 첫 화면의 브라우저 탭 제목은 Pluck - AI 리딩 파트너이고, 왼쪽 위에 Pluck 로고가 보여요", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page).toHaveTitle("Pluck - AI 리딩 파트너");
+  await expect(page.getByRole("banner").getByRole("img", { name: "Pluck" })).toBeVisible();
+  await expect(page.getByText("sprout")).toHaveCount(0);
+});

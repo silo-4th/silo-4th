@@ -9,12 +9,13 @@ import { AccountMenu } from "../_components/account-menu";
 import { ScrollToSection } from "../_components/scroll-to-section";
 import { UnitBody } from "../_components/unit-body";
 import { UnitRail } from "../_components/unit-rail";
+import { UnitLoading, UnitPending, UnitTitle } from "../_components/unit-switch";
 
 type Params = PageProps<"/study/[unitId]">["params"];
 
 export default function UnitPage({ params }: { params: Params }) {
   return (
-    <Suspense>
+    <Suspense fallback={<UnitLoading />}>
       <StudyUnit params={params} />
     </Suspense>
   );
@@ -35,13 +36,15 @@ async function StudyUnit({ params }: { params: Params }) {
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-14 flex-none items-center gap-3.5 bg-player px-4 text-white">
         <UnitRail units={units} currentId={current.id} />
-        <span className="min-w-0 truncate text-base font-bold">{current.title}</span>
+        <UnitTitle>{current.title}</UnitTitle>
         <AccountMenu name={learner.name} />
       </header>
-      <UnitBody sections={sections}>
-        <Markdown remarkPlugins={[remarkGfm, remarkSectionIds]}>{current.content}</Markdown>
-        <ScrollToSection />
-      </UnitBody>
+      <UnitPending>
+        <UnitBody sections={sections}>
+          <Markdown remarkPlugins={[remarkGfm, remarkSectionIds]}>{current.content}</Markdown>
+          <ScrollToSection />
+        </UnitBody>
+      </UnitPending>
     </div>
   );
 }

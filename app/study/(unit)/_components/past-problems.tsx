@@ -4,6 +4,7 @@ import { ChevronDown, ChevronLeft } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { FailState } from "@/app/_components/fail-state";
 import { ResultChipLabel } from "@/app/_components/result-chip";
 import { PAST_FILTERS, type PastAttempt, type PastCard, type PastFilter, fetchPastAttempts, pastList } from "@/lib/past-problems";
 
@@ -41,7 +42,7 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-1 flex-col">
       {/* 패널 안쪽 여백을 넘어 패널 너비 전체에 아래 선을 긋고, 목록을 내려도 패널 맨 위에 남긴다. */}
       <div className="sticky -top-5 z-10 -mx-5 -mt-5 flex h-[46.5px] flex-none items-center gap-1 border-b border-line-2 bg-white px-2.5">
         <button type="button" aria-label="돌아가기" title="돌아가기" onClick={onBack} className="tool-btn flex-none">
@@ -56,28 +57,27 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
         </h2>
         <span aria-hidden className="w-[34px] flex-none" />
       </div>
+      {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
+      <p role="status" className="sr-only">
+        {loaded.kind === "loading" && "지난 문제를 불러오고 있어요"}
+      </p>
       {loaded.kind === "loading" && (
-        <div aria-hidden className="mt-2 flex flex-col">
-          {[0, 1, 2].map((row) => (
-            <div key={row} className="flex flex-col gap-2 border-t border-line-2 py-5 first:border-t-0">
-              <span className="h-3.5 w-2/5 animate-pulse rounded bg-line-2" />
-              <span className="h-3 w-3/5 animate-pulse rounded bg-line-2" />
+        <div aria-hidden className="-mx-5 flex flex-col pt-2">
+          {[64, 52, 70, 58].map((width) => (
+            <div
+              key={width}
+              className="flex min-h-[62px] items-center gap-2.5 px-5 py-2.5 [&+&]:shadow-[inset_0_1px_0_var(--color-line-2)]"
+            >
+              <span className="flex min-w-0 flex-1 flex-col gap-2">
+                <i className="skel h-3.5" style={{ width: `${width}%` }} />
+                <i className="skel h-[11px] w-[38%]" />
+              </span>
+              <i className="skel h-[11px] w-[38px]" />
             </div>
           ))}
         </div>
       )}
-      {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
-      <p role="status" className={loaded.kind === "failed" ? "pt-6 text-center text-sm" : "sr-only"}>
-        {loaded.kind === "loading" && "지난 문제를 불러오고 있어요"}
-        {loaded.kind === "failed" && <span className="font-bold text-red">지난 문제를 불러오지 못했어요</span>}
-      </p>
-      {loaded.kind === "failed" && (
-        <div className="mt-3 flex justify-center">
-          <button type="button" onClick={retry} className="btn btn-sm">
-            다시 시도
-          </button>
-        </div>
-      )}
+      {loaded.kind === "failed" && <FailState title="목록을 불러오지 못했어요" onRetry={retry} />}
       {loaded.kind === "loaded" && loaded.attempts.length === 0 && (
         <p className="pt-4 text-[13px] leading-relaxed text-gray">아직 푼 확인 문제가 없어요. 문제를 풀면 여기에 모여요.</p>
       )}

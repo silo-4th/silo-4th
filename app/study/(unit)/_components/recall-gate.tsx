@@ -1,17 +1,24 @@
 "use client";
 
+import { Check } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import cookieWantFrown from "@/app/_assets/mascot-cookie-want-frown.webp";
+import cookieWant from "@/app/_assets/mascot-cookie-want.webp";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { ResultChipLabel } from "@/app/_components/result-chip";
 import {
+  RECALL_PREP_STEPS,
+  type PrepStepState,
   type RecallFlow,
   type RecallFlowEvent,
   advanceRecall,
   entryOf,
   isLastProblem,
   openTodayRecall,
+  prepStepsAt,
   progressOf,
   recordRecallEvent,
   recordSectionOpened,
@@ -66,11 +73,9 @@ export function RecallGate({ children }: { children: ReactNode }) {
 
   if (gate.stage === "study") return children;
   return (
-    <main aria-label="꺼내 먹기" aria-busy={gate.stage === "checking"} className="fixed inset-0 z-50 overflow-y-auto bg-white text-ink">
+    <main aria-label="꺼내 먹기" className="fixed inset-0 z-50 overflow-y-auto bg-bg text-ink">
       {gate.stage === "checking" ? (
-        <p role="status" className="grid h-full place-items-center text-[15px] font-semibold text-gray">
-          어제 공부한 내용을 챙기고 있어요
-        </p>
+        <Preparing />
       ) : (
         <RecallScreen set={gate.set} onClose={() => setGate({ stage: "study" })} onLeave={leave} />
       )}
@@ -111,24 +116,128 @@ function RecallScreen({ set, onClose, onLeave }: { set: RecallSetView } & Exits)
 
   return (
     <>
-      {flow.stage !== "result" && (
-        <header className="sticky top-0 flex h-14 items-center justify-between border-b border-line bg-white px-6">
-          <span className="text-[15px] font-bold">꺼내 먹기</span>
-          <span className="text-sm font-semibold text-gray">{progressOf(flow)}</span>
-        </header>
-      )}
-      <section
-        key={flow.stage === "problem" ? `problem-${flow.index}` : flow.stage}
-        ref={focusStep}
-        tabIndex={-1}
-        aria-label={STEP_LABEL[flow.stage](flow)}
-        className="mx-auto flex w-full max-w-[560px] flex-col px-4 py-10 focus:outline-none"
-      >
-        {flow.stage === "entry" && <Entry set={set} onStart={() => send({ type: "start" })} onLater={postpone} />}
-        {flow.stage === "problem" && <Problem flow={flow} send={send} />}
-        {flow.stage === "result" && <Result flow={flow} onClose={onClose} onLeave={onLeave} />}
-      </section>
+      {flow.stage !== "result" && <RecallHeader progress={progressOf(flow)} />}
+      <div className={PAGE}>
+        <section
+          key={flow.stage === "problem" ? `problem-${flow.index}` : flow.stage}
+          ref={focusStep}
+          tabIndex={-1}
+          aria-label={STEP_LABEL[flow.stage](flow)}
+          className={`${FRAME} focus:outline-none`}
+        >
+          {flow.stage === "entry" && <Entry set={set} onStart={() => send({ type: "start" })} onLater={postpone} />}
+          {flow.stage === "problem" && <Problem flow={flow} send={send} />}
+          {flow.stage === "result" && <Result flow={flow} onClose={onClose} onLeave={onLeave} />}
+        </section>
+      </div>
     </>
+  );
+}
+
+// 시안처럼 회색 바탕 위 흰 카드 하나에 꺼내 먹기의 모든 단계를 담는다.
+const PAGE = "px-6 pt-8 pb-14";
+const FRAME = "mx-auto flex min-h-[440px] w-full max-w-[680px] flex-col rounded-lg border border-line bg-white px-10 pt-10 pb-12 shadow-card";
+
+function RecallHeader({ progress }: { progress?: string }) {
+  return (
+    <header className="sticky top-0 flex h-14 items-center justify-between border-b border-line bg-white px-6">
+      <span className="text-[15px] font-bold">꺼내 먹기</span>
+      <span className="text-sm font-semibold text-gray">{progress}</span>
+    </header>
+  );
+}
+
+// 세트는 10초 넘게 걸려 만들어진다. 입구와 같은 자리에 준비 단계를 두어, 준비가 끝나면 같은 상자가 개념 목록으로 바뀌어 보인다.
+function Preparing() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const timers = RECALL_PREP_STEPS.flatMap(({ doneAtMs }) =>
+      doneAtMs === undefined ? [] : [setTimeout(() => setElapsed(doneAtMs), doneAtMs)],
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  const states = prepStepsAt(elapsed);
+  return (
+    <>
+      <RecallHeader />
+      <div className={PAGE}>
+        <div role="status" className={FRAME}>
+          <IntroHead title="어제 공부한 내용을 챙기고 있어요" />
+          <ol className={INFO_BOX}>
+            {RECALL_PREP_STEPS.map(({ label }, index) => (
+              <PrepStep key={label} label={label} state={states[index] ?? "wait"} />
+            ))}
+          </ol>
+          <IntroActions />
+        </div>
+      </div>
+    </>
+  );
+}
+
+const PREP_STEP_STYLE: Record<PrepStepState, { text: string; mark: string; spoken: string }> = {
+  done: { text: "text-ink-2", mark: "prep-tick border-green bg-green", spoken: " 완료" },
+  now: { text: "text-ink", mark: "prep-spin border-line border-t-green", spoken: " 진행 중" },
+  wait: { text: "text-gray-3", mark: "border-line", spoken: "" },
+};
+
+function PrepStep({ label, state }: { label: string; state: PrepStepState }) {
+  const style = PREP_STEP_STYLE[state];
+  return (
+    <li aria-atomic className={`${INFO_ROW} gap-3 text-[15px] font-semibold transition-colors duration-300 ${style.text}`}>
+      <span aria-hidden className={`grid size-5 flex-none place-items-center rounded-full border-2 text-white ${style.mark}`}>
+        {state === "done" && <Check size={12} strokeWidth={3} />}
+      </span>
+      {label}
+      <span className="sr-only">{style.spoken}</span>
+    </li>
+  );
+}
+
+// 준비 단계와 개념 목록이 같은 상자, 같은 줄 높이를 써서 준비가 끝나도 상자 크기가 바뀌지 않는다.
+const INFO_BOX = "flex flex-col rounded-lg border border-line bg-white px-4";
+const INFO_ROW = "flex min-h-[52px] items-center border-t border-line-2 py-3.5 first:border-t-0";
+
+// 꺼내 먹기를 마치면 쿠키를 받는 이야기가 여기서 시작한다. 마스코트가 쿠키를 바라고 있다.
+function IntroHead({ title, summary }: { title: string; summary?: string }) {
+  return (
+    <>
+      <span aria-hidden className="recall-want">
+        <span className="recall-want-bob">
+          <Image src={cookieWant} alt="" width={136} height={110} draggable={false} unoptimized loading="eager" />
+          <Image src={cookieWantFrown} alt="" width={136} height={110} draggable={false} unoptimized className="recall-want-frown" />
+          <i className="recall-want-droop l" />
+          <i className="recall-want-droop r" />
+          <i className="mascot-lid l" />
+          <i className="mascot-lid r" />
+        </span>
+      </span>
+      <h1 className="mb-2 text-center text-2xl leading-[1.35] font-bold tracking-[-0.03em] text-balance">{title}</h1>
+      <p className="mb-6 min-h-[1.6em] text-center text-sm leading-[1.6] text-gray">{summary}</p>
+    </>
+  );
+}
+
+// 준비 중에는 버튼을 숨기되 자리는 남겨, 준비가 끝나 버튼이 나타나도 아래가 밀리지 않는다.
+function IntroActions({ onStart, onLater }: { onStart?: () => void; onLater?: () => void }) {
+  const ready = onStart !== undefined;
+  return (
+    <div
+      aria-hidden={!ready}
+      className={`mt-7 flex flex-col items-center gap-5 ${ready ? "cta-in" : "pointer-events-none opacity-0"}`}
+    >
+      <button type="button" onClick={onStart} tabIndex={ready ? undefined : -1} className="btn btn-dark btn-lg btn-block">
+        시작하기
+      </button>
+      <button
+        type="button"
+        onClick={onLater}
+        tabIndex={ready ? undefined : -1}
+        className="rounded-[4px] text-[13.5px] font-semibold text-gray underline underline-offset-3 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-green"
+      >
+        내일 꺼내 먹을래요
+      </button>
+    </div>
   );
 }
 
@@ -136,22 +245,16 @@ function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => v
   const { rows, summary } = entryOf(set.items);
   return (
     <>
-      <h1 className="text-[22px] leading-snug font-bold">지난번에 공부한 것 중 {rows.length}개를 꺼내 볼게요</h1>
-      <p className="mt-2 text-sm text-gray">{summary}</p>
-      <ul className="mt-6 flex flex-col gap-2">
-        {rows.map((row) => (
-          <li key={row.id} className="card flex items-center gap-2.5 px-4 py-3.5">
+      <IntroHead title={`지난번에 공부한 것 중 ${rows.length}개를 꺼내 볼게요`} summary={summary} />
+      <ul className={INFO_BOX}>
+        {rows.map((row, index) => (
+          <li key={row.id} className={`${INFO_ROW} rise-in gap-2.5`} style={{ animationDelay: `${index * 90}ms` }}>
             <span className={`chip ${row.reason === "물어봄" ? "chip-green" : "chip-red"}`}>{row.reason}</span>
-            <span className="text-[15px] font-semibold">{row.conceptTitle}</span>
+            <span className="text-[15px] font-bold">{row.conceptTitle}</span>
           </li>
         ))}
       </ul>
-      <button type="button" onClick={onStart} className="btn btn-dark btn-lg btn-block mt-8">
-        시작하기
-      </button>
-      <button type="button" onClick={onLater} className="mt-3 self-center text-sm font-medium text-gray hover:text-ink-2">
-        오늘은 건너뛸게요
-      </button>
+      <IntroActions onStart={onStart} onLater={onLater} />
     </>
   );
 }

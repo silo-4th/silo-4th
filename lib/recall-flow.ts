@@ -87,10 +87,7 @@ export function entryOf(items: RecallItemView[]) {
     conceptTitle: item.problem.conceptTitle,
     reason: ENTRY_REASON[item.reason],
   }));
-  const skipped = rows.filter((row) => row.reason === "넘어감").length;
-  const asked = rows.length - skipped;
-  const parts = [skipped > 0 && `질문 없이 넘어간 ${skipped}개`, asked > 0 && `물어본 ${asked}개`].filter(Boolean);
-  return { rows, summary: `${parts.join(", ")}예요` };
+  return { rows, summary: `${rows.length}개를 꺼내 보면 플러키에게 쿠키를 줄 수 있어요` };
 }
 
 async function post(path: string, init: RequestInit = {}): Promise<Response | undefined> {
@@ -99,6 +96,21 @@ async function post(path: string, init: RequestInit = {}): Promise<Response | un
   } catch {
     return undefined;
   }
+}
+
+// 서버는 세트를 요청 하나로 만들어 단계별 진행을 알려 주지 않는다. 앞 두 단계는 시간으로 체크하고,
+// 마지막 단계는 시간을 두지 않아 요청이 끝나기 전에는 모두 체크된 것처럼 보이지 않게 한다.
+export const RECALL_PREP_STEPS: readonly { label: string; doneAtMs?: number }[] = [
+  { label: "지난 공부 기록 살펴보기", doneAtMs: 1_200 },
+  { label: "꺼내 볼 개념 3개 고르기", doneAtMs: 2_500 },
+  { label: "문제 3개 만들기" },
+];
+
+export type PrepStepState = "done" | "now" | "wait";
+
+export function prepStepsAt(elapsedMs: number): PrepStepState[] {
+  const now = RECALL_PREP_STEPS.findIndex(({ doneAtMs }) => doneAtMs === undefined || elapsedMs < doneAtMs);
+  return RECALL_PREP_STEPS.map((_, index) => (index < now ? "done" : index === now ? "now" : "wait"));
 }
 
 // 세트 준비는 서버에서 AI 문제 생성을 30초에서 끊는다. 채점과 같이 서버 상한의 두 배를 기다린 뒤 실패로 본다.
