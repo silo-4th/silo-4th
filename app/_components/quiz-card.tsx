@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { Check, Lightbulb, X } from "lucide-react";
+import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttemptInput, AttemptResult } from "@/lib/quiz-attempts";
-import { resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
+import { type Mark, type Solved, choiceMarks, fillLines, resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
 import {
   MAX_ANSWER_LENGTH,
   type ProblemStage,
   type QuizFlow,
   type QuizFlowEvent,
   advanceQuizFlow,
+  canCheck,
   canSubmit,
   startQuizFlow,
 } from "@/lib/quiz-flow";
@@ -56,9 +58,6 @@ function focusOnMount(element: HTMLElement | null) {
   if (stayed) element.focus();
 }
 
-// 다음으로 넘어갈 때 부르는 쪽에 낸 답을 넘긴다. 채점을 받지 못한 채 넘어가면 result가 없다.
-export type Solved = { submitted: AttemptInput; result?: AttemptResult };
-
 type QuizCardProps = {
   problem: ProblemView;
   onNext: (solved: Solved) => void;
@@ -67,9 +66,9 @@ type QuizCardProps = {
   onSkip?: () => void;
   // 꺼내 먹기의 마지막 문항처럼 다음 버튼이 다음 문제로 가지 않을 때 넘긴다.
   nextLabel?: string;
-  // 퀴즈 탭이 진행 게이지를 채우려고 넘긴다.
-  onGraded?: () => void;
-  // 퀴즈 탭처럼 p-5 스크롤 영역 안에 둘 때, 다음 버튼을 그 영역 아래에 붙인다.
+  // 퀴즈 탭이 진행 게이지를 채우고 묶음 결과에 칩을 기억하려고 넘긴다.
+  onGraded?: (solved: Solved) => void;
+  // 퀴즈 탭처럼 p-5 스크롤 영역 안에 둘 때, 내용이 넘치면 아래 버튼을 그 영역 아래에 붙인다.
   pinNext?: boolean;
 };
 
@@ -79,7 +78,7 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
   const dispatch = (...events: QuizFlowEvent[]) => setFlow((current) => events.reduce(advanceQuizFlow, current));
 
   // 부르는 쪽이 매번 새 함수를 넘겨도 채점 요청을 다시 보내지 않게 효과의 의존성에서 뺀다.
-  const graded = useEffectEvent(() => onGraded?.());
+  const graded = useEffectEvent((solved: Solved) => onGraded?.(solved));
   const grading = flow.stage === "grading" ? flow : undefined;
   useEffect(() => {
     if (!grading) return;
@@ -87,7 +86,7 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
     void sendAttempt(recallItemId ? { ...grading.request, recallItemId } : grading.request).then((result) => {
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
-      if (result) graded();
+      if (result) graded({ submitted: grading.request, result });
     });
     return () => {
       active = false;
@@ -111,8 +110,9 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
           <button
             type="button"
             onClick={() => dispatch({ type: "show-hint" })}
-            className="ml-auto h-5.5 text-[12.5px] font-medium text-gray hover:text-ink-2"
+            className="ml-auto inline-flex h-5.5 items-center gap-1 text-[12.5px] font-medium text-gray hover:text-ink-2"
           >
+            <Lightbulb size={13} aria-hidden />
             힌트
           </button>
         )}
@@ -121,15 +121,31 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
         <Markdown remarkPlugins={[remarkGfm]}>{problem.format === "blank" ? shownStem(problem.stem) : problem.stem}</Markdown>
       </div>
       {flow.stage === "problem" && flow.hintUsed && (
-        <p className="mt-2.5 rounded-md bg-amber-50 px-3 py-2.5 text-[13px] text-[#7a4b00]">
-          <b>힌트</b> {problem.hint}
+        <p className="mt-2.5 flex gap-1 rounded-md bg-amber-50 px-3 py-2.5 text-[13px] text-[#7a4b00]">
+          <Lightbulb size={15} aria-hidden className="mt-px flex-none" />
+          <span>
+            <b className="mr-2">힌트</b>
+            {problem.hint}
+          </span>
         </p>
       )}
       {flow.stage === "problem" && <Answering problem={problem} flow={flow} dispatch={dispatch} />}
-      {flow.stage === "problem" && onSkip && (
-        <button type="button" onClick={onSkip} className="mt-4 self-center text-[13px] font-medium text-gray hover:text-ink-2">
-          이 문제 건너뛰기
-        </button>
+      {flow.stage === "problem" && (
+        <CardAction pinned={pinNext}>
+          <button
+            type="button"
+            disabled={!canCheck(flow)}
+            onClick={() => dispatch({ type: "check" })}
+            className="btn btn-block btn-dark h-11 text-[15px] disabled:opacity-35"
+          >
+            정답 확인
+          </button>
+          {onSkip && (
+            <button type="button" onClick={onSkip} className="mx-auto mt-2.5 block text-[13px] font-medium text-gray-3 hover:text-ink">
+              이 문제 건너뛰기
+            </button>
+          )}
+        </CardAction>
       )}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
       <p role="status" className={STATUS_CLASS[flow.stage] ?? "sr-only"}>
@@ -147,9 +163,9 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
       )}
       {flow.stage === "explanation" && (
         <Explanation
-          format={problem.format}
-          {...resultView(flow.submitted, flow.result)}
-          explanation={flow.result.explanation}
+          problem={problem}
+          submitted={flow.submitted}
+          result={flow.result}
           nextLabel={nextLabel ?? "다음 문제"}
           pinNext={pinNext}
           onNext={next}
@@ -161,6 +177,26 @@ export function QuizCard({ problem, onNext, recallItemId, onSkip, nextLabel, onG
 
 const BUTTON = "h-9 rounded-md border border-line bg-white px-3.5 text-sm font-semibold hover:bg-bg";
 
+// 채점 전 보기와 채점 뒤 보기가 같은 모양이라 테두리와 동그라미 색만 바꾼다.
+const OPTION = "flex w-full items-center gap-2.5 rounded-lg border px-3.5 py-3 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.03)]";
+const MARKED: Record<Mark, { row: string; key: string }> = {
+  right: { row: "border-green bg-green-25", key: "bg-green text-white" },
+  wrong: { row: "border-red bg-red-50", key: "bg-red text-white" },
+  dim: { row: "border-line bg-white text-gray-3", key: "bg-line-2 text-gray" },
+};
+
+function OptionKey({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <span aria-hidden className={`grid size-5.5 flex-none place-items-center rounded-full text-[11px] font-bold ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+function MarkIcon({ mark }: { mark: Exclude<Mark, "dim"> }) {
+  return mark === "right" ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />;
+}
+
 function Answering({
   problem,
   flow,
@@ -170,7 +206,7 @@ function Answering({
   flow: ProblemStage;
   dispatch: (...events: QuizFlowEvent[]) => void;
 }) {
-  const ready = canSubmit(flow);
+  const answered = canSubmit(flow);
   return (
     <>
       {problem.format === "mcq" && (
@@ -181,7 +217,7 @@ function Answering({
             return (
               <label
                 key={index}
-                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-white px-3.5 py-3 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-gray-3 has-checked:border-ink has-focus-visible:outline-2 has-focus-visible:outline-green-600"
+                className={`${OPTION} cursor-pointer border-line bg-white hover:border-gray-3 has-checked:border-ink has-focus-visible:outline-2 has-focus-visible:outline-green-600`}
               >
                 <input
                   type="radio"
@@ -190,12 +226,7 @@ function Answering({
                   onChange={() => dispatch({ type: "choose", index })}
                   className="sr-only"
                 />
-                <span
-                  aria-hidden
-                  className={`grid size-5.5 flex-none place-items-center rounded-full text-[11px] font-bold ${picked ? "bg-ink text-white" : "bg-line-2 text-gray"}`}
-                >
-                  {LETTERS[index]}
-                </span>
+                <OptionKey className={picked ? "bg-ink text-white" : "bg-line-2 text-gray"}>{LETTERS[index]}</OptionKey>
                 <span>{choice}</span>
               </label>
             );
@@ -231,77 +262,126 @@ function Answering({
           </button>
         </>
       )}
-      {/* 시안처럼 확신도 버튼이 답 내기를 겸한다. */}
+      {/* 확신도는 고르기만 하고, 채점은 정답 확인 버튼이 보낸다. 답이 생기기 전에는 흐리게 두고 누를 수 없다. */}
       <div
         role="group"
         aria-label="확신도"
-        className={`mt-3.5 flex flex-wrap items-center gap-1.5 gap-y-2 transition-opacity ${ready ? "" : "opacity-40"}`}
+        className={`mt-3.5 flex flex-wrap items-center gap-1.5 gap-y-2 transition-opacity ${answered ? "" : "opacity-40"}`}
       >
         <span className="basis-full text-[13px] font-bold">{CONFIDENCE_QUESTION[problem.format]}</span>
-        {CONFIDENCES.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            disabled={!ready}
-            onClick={() => dispatch({ type: "submit" }, { type: "pick-confidence", confidence: value })}
-            className="h-7.5 rounded-full border border-line bg-white px-3 text-[13px] font-semibold text-ink-2 enabled:hover:border-gray-3"
-          >
-            {label}
-          </button>
-        ))}
+        {CONFIDENCES.map(({ value, label }) => {
+          const on = flow.confidence === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              disabled={!answered}
+              aria-pressed={on}
+              onClick={() => dispatch({ type: "pick-confidence", confidence: value })}
+              className={`h-7.5 rounded-full border bg-white px-3 text-[13px] transition-colors ${on ? "border-ink font-bold text-ink shadow-[inset_0_0_0_0.5px_var(--color-ink)]" : "border-line font-semibold text-ink-2 enabled:hover:border-gray-3"}`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
     </>
   );
 }
 
+// 정답 확인과 다음 문제 버튼 자리다. 내용 바로 아래에 두고, 내용이 넘쳐 스크롤되면 스크롤 영역 아래에 붙여 늘 보이게 한다.
+function CardAction({ pinned, children }: { pinned: boolean; children: ReactNode }) {
+  return <div className={pinned ? "sticky -bottom-5 z-2 mt-1 -mb-5 bg-white pt-3 pb-5" : "mt-6"}>{children}</div>;
+}
+
+// 객관식은 보기 목록을, 빈칸은 내 답 줄을 그대로 두고 맞고 틀림을 표시한다. 서술형은 내 답과 모범 답안을 나란히 둔다.
+function GradedAnswer({ problem, submitted, result }: { problem: ProblemView; submitted: AttemptInput; result: AttemptResult }) {
+  if (problem.format === "mcq") {
+    const marks = choiceMarks(submitted, result);
+    return (
+      <ul aria-label="보기" className="mt-3 flex flex-col gap-2">
+        {(problem.choices ?? []).map((choice, index) => {
+          const mark = marks[index] ?? "dim";
+          const mine = submitted.chosenIndex === index;
+          return (
+            <li key={index} className={`${OPTION} ${MARKED[mark].row}`}>
+              <OptionKey className={MARKED[mark].key}>{mark === "dim" ? LETTERS[index] : <MarkIcon mark={mark} />}</OptionKey>
+              <span>{choice}</span>
+              {(mark === "right" || mine) && (
+                <span className="sr-only">{mark === "right" ? (mine ? "정답, 내 답" : "정답") : "내 답"}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+  if (problem.format === "blank") {
+    return (
+      <dl className="mt-3 flex flex-col gap-2">
+        {fillLines(submitted, result).map(({ label, text, mark }) => (
+          <div key={label} className={`${OPTION} ${MARKED[mark].row}`}>
+            <dt className="sr-only">{label}</dt>
+            <OptionKey className={MARKED[mark].key}>
+              <MarkIcon mark={mark} />
+            </OptionKey>
+            <dd className="text-[15px] break-words whitespace-pre-wrap">{text}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+  const { verdict, correctAnswers, myAnswer } = resultView(submitted, result);
+  return (
+    <dl className="mt-3 flex flex-col gap-2 text-sm">
+      <div className={`rounded-lg border px-3.5 py-3 ${verdict === null ? "border-line" : verdict === "맞았어요" ? "border-green bg-green-25" : "border-red bg-red-50"}`}>
+        <dt className="text-xs font-semibold text-gray">내 답</dt>
+        <dd className="mt-1 whitespace-pre-wrap">{myAnswer}</dd>
+      </div>
+      <div className="rounded-lg border border-green bg-green-25 px-3.5 py-3">
+        <dt className="text-xs font-semibold text-gray">모범 답안</dt>
+        <dd className="mt-1 whitespace-pre-wrap">{correctAnswers.join(", ")}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function Explanation({
-  format,
-  verdict,
-  correctAnswers,
-  myAnswer,
-  explanation,
+  problem,
+  submitted,
+  result,
   nextLabel,
   pinNext,
   onNext,
-}: ReturnType<typeof resultView> & {
-  format: ProblemView["format"];
-  explanation: string;
+}: {
+  problem: ProblemView;
+  submitted: AttemptInput;
+  result: AttemptResult;
   nextLabel: string;
   pinNext: boolean;
   onNext: () => void;
 }) {
+  const { verdict } = resultView(submitted, result);
   const right = verdict === "맞았어요";
   return (
-    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="flex flex-1 flex-col rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-600">
-      <dl className="mt-3 flex flex-col gap-2 text-sm">
-        <div
-          className={`rounded-lg border px-3.5 py-3 ${verdict === null ? "border-line" : right ? "border-green bg-green-25" : "border-red bg-red-50"}`}
-        >
-          <dt className="text-xs font-semibold text-gray">내 답</dt>
-          <dd className="mt-1 whitespace-pre-wrap">{myAnswer}</dd>
-        </div>
-        <div className="rounded-lg border border-green bg-green-25 px-3.5 py-3">
-          <dt className="text-xs font-semibold text-gray">{format === "free" ? "모범 답안" : "정답"}</dt>
-          <dd className="mt-1 whitespace-pre-wrap">{correctAnswers.join(", ")}</dd>
-        </div>
-      </dl>
+    <div ref={focusOnMount} tabIndex={-1} aria-label="채점 결과와 해설" role="region" className="flex flex-col rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-green-600">
+      <GradedAnswer problem={problem} submitted={submitted} result={result} />
       <div className="mt-2.5 rounded-md bg-bg px-4 py-3.5 text-[13px] text-ink-2">
         {verdict && (
-          <p className={`mb-1.5 text-[15px] font-bold ${right ? "text-green-600" : "text-red"}`}>
-            <span aria-hidden>{right ? "✓ " : "✕ "}</span>
+          <p className={`mb-1.5 inline-flex items-center gap-1 text-[15px] font-bold ${right ? "text-green-600" : "text-red"}`}>
+            {right ? <Check size={18} strokeWidth={3} aria-hidden /> : <X size={18} strokeWidth={3} aria-hidden />}
             {verdict}
           </p>
         )}
         <div className="unit-body">
-          <Markdown remarkPlugins={[remarkGfm]}>{explanation}</Markdown>
+          <Markdown remarkPlugins={[remarkGfm]}>{result.explanation}</Markdown>
         </div>
       </div>
-      {/* 해설이 짧으면 카드 아래로 밀고, 길면 스크롤 영역 아래에 붙여 버튼이 늘 패널 아래에 있다. */}
-      <div className={pinNext ? "sticky -bottom-5 mt-auto -mb-5 bg-white pt-3 pb-5" : "mt-6"}>
+      <CardAction pinned={pinNext}>
         <button type="button" onClick={onNext} className="btn btn-block btn-dark h-11 text-[15px]">
           {nextLabel}
         </button>
-      </div>
+      </CardAction>
     </div>
   );
 }

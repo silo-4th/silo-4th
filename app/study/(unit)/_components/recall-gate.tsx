@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { QuizCard } from "@/app/_components/quiz-card";
+import { ResultChipLabel } from "@/app/_components/result-chip";
 import {
   type RecallFlow,
   type RecallFlowEvent,
@@ -16,7 +17,7 @@ import {
   recordSectionOpened,
   startRecall,
 } from "@/lib/recall-flow";
-import { type ResultCard, type ResultChip, resultCards, resultSubtitle, resultTitle, studyHref } from "@/lib/recall-result";
+import { type ResultCard, resultCards, resultSubtitle, resultTitle, studyHref } from "@/lib/recall-result";
 import type { RecallSetView } from "@/lib/recall-sets";
 
 // leavingFrom은 결과에서 다른 단원으로 떠날 때의 주소다. 주소가 바뀌면 학습 화면을 그린다.
@@ -177,13 +178,6 @@ function Problem({
   );
 }
 
-const CHIP_CLASS: Record<ResultChip, string> = {
-  맞혔어요: "chip-green",
-  "맞았지만 헷갈렸어요": "chip-amber",
-  틀렸어요: "chip-red",
-  "채점하지 못했어요": "",
-};
-
 // 링크로 두어 새 탭으로도 열 수 있게 하고, 이 화면에서 옮길 때만 주소가 바뀐 뒤 꺼내 먹기를 닫는다.
 function LeaveLink({
   href,
@@ -248,7 +242,7 @@ function ResultItem({ number, card, onLeave }: { number: number; card: ResultCar
         <span className="text-[15px] font-semibold">
           {number}. {card.conceptTitle}
         </span>
-        <span className={`chip ${CHIP_CLASS[card.chip]}`}>{card.chip}</span>
+        <ResultChipLabel chip={card.chip} />
       </div>
       {card.myAnswer !== undefined && (
         <dl className={card.stacked || card.correctAnswer === undefined ? "flex flex-col gap-2" : "grid grid-cols-2 gap-2"}>

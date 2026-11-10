@@ -1,28 +1,43 @@
 "use client";
 
-import { X } from "lucide-react";
+import { House, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { Burst } from "@/app/_components/burst";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
+import { ResultChipLabel } from "@/app/_components/result-chip";
+import type { Solved } from "@/lib/quiz-card";
 import {
   SET_SIZE,
   type ProblemResult,
+  type QuizSet,
+  type QuizSetEvent,
   type QuizTab,
-  type QuizTabEvent,
-  advanceQuizTab,
+  type SetResults,
+  advanceQuizSet,
+  clearSavedProblem,
+  completesSet,
   fetchPersonalized,
   fetchProblem,
   fetchResumedProblem,
   gaugeFilled,
   readSavedProblem,
+  readSetFinished,
   saveProblem,
-  settleProblem,
-  startQuizTab,
+  saveSetFinished,
+  setGuide,
+  setAllRight,
+  setItems,
+  setTitle,
+  settleQuizSet,
+  startQuizSet,
 } from "@/lib/quiz-tab";
+import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
 import { QuizGuide } from "./quiz-guide";
+import { QuizHomeArt } from "./quiz-home-art";
 
 const TABS = [
   { id: "agent", label: "AI 에이전트" },
@@ -31,31 +46,48 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// 상태가 바뀔 때만 요청하고 기억한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
+// 탭 상태가 바뀔 때만 요청한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
+// 문제를 띄운 동안에는 칩이 바뀔 때마다 기억해, 새로고침 뒤에도 결과에 앞서 푼 문제가 나온다.
 // 이어 풀기 응답이 다시 새 문제 요청으로 이어지므로, 응답을 반영할 때도 지금 상태를 ref로 읽어 바로 다음 요청을 보낸다.
-function useQuizTab(learnerId: string) {
-  const [tab, setTab] = useState<QuizTab>(startQuizTab);
-  const current = useRef(tab);
+function useQuizSet(learnerId: string) {
+  const [set, setSet] = useState<QuizSet>(() => startQuizSet(readSetFinished(learnerId)));
+  const current = useRef(set);
+  // 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
+  const shownAt = useRef<string>(undefined);
 
-  // shownAt은 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
-  function commit(next: QuizTab, shownAt?: string) {
+  function commit(next: QuizSet) {
+    const { tab: before, results: earlier } = current.current;
     current.current = next;
-    setTab(next);
-    if (next.stage === "problem") saveProblem(learnerId, { problemId: next.problem.id, number: next.number, shownAt });
-    if (next.stage === "loading") void fetchProblem(next).then((served) => settle(next, served?.body, served?.servedAt));
-    if (next.stage === "resuming") void fetchResumedProblem(next).then((problem) => settle(next, problem, next.shownAt));
+    setSet(next);
+    const { tab, results } = next;
+    // 채점을 받지 못한 칩은 문제를 넘길 때 생기므로, 떠나는 문제의 자리에 함께 남겨야 새로고침 뒤 결과에서 빠지지 않는다.
+    const saving = tab.stage === "problem" ? tab : before.stage === "problem" && results !== earlier ? before : undefined;
+    if (saving) saveProblem(learnerId, { problemId: saving.problem.id, number: saving.number, shownAt: shownAt.current, results });
+    if (tab === before) return;
+    // 결과에서 나오면 새 묶음이다. 새 문제를 받기 전에 새로고침해도 지난 묶음의 마지막 문제로 결과를 다시 띄우지 않는다.
+    if (before.stage === "result") clearSavedProblem(learnerId);
+    if (tab.stage === "loading") void fetchProblem(tab).then((served) => settle(tab, served?.body, served?.servedAt));
+    if (tab.stage === "resuming") void fetchResumedProblem(tab).then((problem) => settle(tab, problem, tab.shownAt));
   }
 
-  function settle(requested: QuizTab, problem: ProblemResult, shownAt?: string) {
-    const next = settleProblem(current.current, requested, problem);
-    if (next !== current.current) commit(next, shownAt);
+  function settle(requested: QuizTab, problem: ProblemResult, servedAt?: string) {
+    const next = settleQuizSet(current.current, requested, problem);
+    if (next === current.current) return;
+    if (next.tab.stage === "problem") shownAt.current = servedAt;
+    commit(next);
   }
 
-  function send(event: QuizTabEvent) {
-    const next = advanceQuizTab(current.current, event);
+  // 탭을 연 채로 학습일이 바뀌었거나 다른 탭에서 묶음을 마쳤을 수 있어, 새 묶음을 시작하는 버튼은 누를 때 저장된 학습일로 다시 판단한다.
+  function send(event: QuizSetEvent): QuizSet {
+    const starting = event.type === "enter" || event.type === "restart";
+    const base = starting ? { ...current.current, finished: readSetFinished(learnerId) } : current.current;
+    // 메모리의 finished는 지난 학습일 값일 수 있어, 바뀔 때가 아니라 묶음을 마치는 이벤트마다 오늘 학습일을 남긴다.
+    if (completesSet(base.tab, event)) saveSetFinished(learnerId);
+    const next = advanceQuizSet(base, event);
     if (next !== current.current) commit(next);
+    return next;
   }
-  return [tab, send] as const;
+  return [set, send] as const;
 }
 
 // 레이아웃에 두어 단원을 옮겨도 대화와 퀴즈가 남는다. 숨긴 탭과 닫은 패널도 그대로 두어 풀던 답과 받는 중인 답이 남는다.
@@ -63,7 +95,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   const { unitId } = useParams<{ unitId: string }>();
   const [opened, setOpened] = useState(true);
   const [shown, setShown] = useState<TabId>("agent");
-  const [quiz, sendQuiz] = useQuizTab(learnerId);
+  const [quiz, sendQuiz] = useQuizSet(learnerId);
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
   const peek = useRef<HTMLButtonElement>(null);
 
@@ -86,10 +118,11 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   }
 
   // 누른 버튼이 숨는 에이전트 탭에 있으므로 포커스를 퀴즈 탭으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
+  // 새로고침 뒤 퀴즈 탭을 열기 전이어도 기억해 둔 묶음의 카운트와 칩을 잇도록 함께 보낸다.
   function solveRelated(questionId: string) {
     setShown("quiz");
     tabs.current.get("quiz")?.focus();
-    sendQuiz({ type: "related", questionId });
+    sendQuiz({ type: "related", questionId, saved: readSavedProblem(learnerId) });
   }
 
   function moveFocus(event: KeyboardEvent, index: number) {
@@ -145,11 +178,11 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
           </div>
         </div>
         <div id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" hidden={shown !== "agent"} className="flex min-h-0 flex-1 flex-col">
-          <QuestionPanel onSolveRelated={solveRelated} />
+          <QuestionPanel learnerId={learnerId} onSolveRelated={solveRelated} />
         </div>
         <div id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden={shown !== "quiz"} className="flex min-h-0 flex-1 flex-col">
           <QuizTabBody
-            tab={quiz}
+            set={quiz}
             unitId={unitId}
             active={opened && shown === "quiz"}
             guide={
@@ -158,31 +191,103 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
             }
             onStart={() => {
               // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
-              sendQuiz({ type: "enter", unitId });
-              tabs.current.get("quiz")?.focus();
+              // 막혀서 안내가 뜨면 버튼이 남고, 안내를 닫을 때 브라우저가 그 버튼으로 포커스를 돌려준다.
+              if (!sendQuiz({ type: "enter", unitId }).betaNotice) tabs.current.get("quiz")?.focus();
             }}
             onRetry={() => sendQuiz({ type: "retry" })}
-            onNext={() => sendQuiz({ type: "next", unitId })}
+            onGraded={(solved) => sendQuiz({ type: "graded", solved })}
+            onNext={(solved) => sendQuiz({ type: "next", unitId, solved })}
+            onLeaveResult={(leave) => {
+              // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
+              const next = sendQuiz(leave === "home" ? { type: "home" } : { type: "restart", unitId });
+              if (!next.betaNotice) tabs.current.get("quiz")?.focus();
+            }}
           />
+          <BetaNotice open={quiz.betaNotice} onClose={() => sendQuiz({ type: "dismiss" })} />
         </div>
       </aside>
     </>
   );
 }
 
-type QuizTabBodyProps = { tab: QuizTab; unitId: string; active: boolean; guide: ReactNode; onStart: () => void; onRetry: () => void; onNext: () => void };
+// 확인이나 Esc로 닫으면 close 이벤트가 오고, 브라우저가 모달을 열기 전 버튼으로 포커스를 돌려준다.
+function BetaNotice({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (open && !dialog?.open) dialog?.showModal();
+    if (!open && dialog?.open) dialog.close();
+  }, [open]);
 
-function QuizTabBody({ tab, unitId, active, guide, onStart, onRetry, onNext }: QuizTabBodyProps) {
-  // 채점을 받은 탭 상태다. 기본 문제는 같은 ID로 다시 나올 수 있어, ID 대신 문제를 띄울 때마다 새로 생기는 상태로 비교한다.
-  const [gradedTab, setGradedTab] = useState<QuizTab>();
-  const graded = gradedTab === tab;
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="beta-notice-title"
+      onClose={onClose}
+      className="m-auto w-[min(320px,calc(100%-32px))] rounded-2xl bg-white p-6 text-center text-ink backdrop:bg-[rgba(18,19,20,0.35)]"
+    >
+      <h2 id="beta-notice-title" className="text-[19px] font-bold tracking-tight">
+        아직 베타 단계예요
+      </h2>
+      <p className="mt-2 text-[13.5px] leading-relaxed text-gray">
+        지금은 하루에 한 묶음만 풀 수 있어요.
+        <br />
+        새벽 4시가 지나면 새 문제를 풀 수 있어요.
+      </p>
+      <form method="dialog" className="mt-5">
+        <button type="submit" className="btn btn-dark btn-lg btn-block">
+          확인
+        </button>
+      </form>
+    </dialog>
+  );
+}
+
+type Leave = "restart" | "home";
+
+type QuizTabBodyProps = {
+  set: QuizSet;
+  unitId: string;
+  active: boolean;
+  guide: ReactNode;
+  onStart: () => void;
+  onRetry: () => void;
+  onGraded: (solved: Solved) => void;
+  onNext: (solved: Solved) => void;
+  onLeaveResult: (leave: Leave) => void;
+};
+
+function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, onNext, onLeaveResult }: QuizTabBodyProps) {
+  const { tab, results } = set;
+  // 지난 문제를 연 퀴즈 홈이나 결과 상태다. 관련 문제로 그 화면을 떠났다가 돌아오면 새 상태라 지난 문제가 아니라 그 화면을 보여 준다.
+  const [pastOf, setPastOf] = useState<QuizTab>();
+  const pastShown = pastOf === tab;
+  // 누른 돌아가기 버튼이 사라지므로 연 화면의 지난 문제 보기 버튼으로 포커스를 돌려준다. 돌아온 직후 한 번만 옮겨, 나중에 탭을 다시 열 때는 옮기지 않는다.
+  const backPending = useRef(false);
+  const [focusBack] = useState(() => (element: HTMLElement | null) => {
+    if (!element || !backPending.current) return;
+    backPending.current = false;
+    focusOnMount(element);
+  });
   const waiting = tab.stage === "loading" || tab.stage === "resuming" || tab.stage === "failed";
   return (
     // 카드가 남은 높이를 채워야 다음 문제 버튼이 패널 아래까지 내려간다.
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
-      {guide}
+    // 지난 문제의 제목 줄은 위에 붙어 있으므로, 키보드로 올라갈 때 그 아래로 스크롤해 포커스가 가려지지 않게 한다.
+    <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-5 ${pastShown ? "scroll-pt-14" : ""}`}>
+      {/* 지난 문제는 패널 맨 위에 제목 줄을 두므로 첫 진입 안내를 가린다. 닫은 안내가 다시 뜨지 않게 지우지 않고 숨긴다. */}
+      <div hidden={pastShown}>{guide}</div>
       {/* 읽고 물어볼 때마다 안내가 바뀌므로, 탭을 열 때마다 새로 그려 다시 묻는다. */}
-      {tab.stage === "idle" && active && <QuizHome unitId={unitId} onStart={onStart} />}
+      {pastShown && active && (
+        <PastProblems
+          onBack={() => {
+            backPending.current = true;
+            setPastOf(undefined);
+          }}
+        />
+      )}
+      {tab.stage === "idle" && active && !pastShown && (
+        <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
+      )}
       {waiting && (
         <div className="flex justify-center pt-8">
           <Mascot size={88} spin={tab.stage !== "failed"} />
@@ -203,16 +308,80 @@ function QuizTabBody({ tab, unitId, active, guide, onStart, onRetry, onNext }: Q
       )}
       {tab.stage === "problem" && (
         <>
-          <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, graded)} />
-          <QuizCard key={tab.problem.id} problem={tab.problem} onGraded={() => setGradedTab(tab)} onNext={onNext} pinNext />
+          {/* 그 번호에 문제가 뜰 때 칸을 비우므로, 칸이 차 있으면 지금 문제를 채점받은 것이다. */}
+          <QuizGauge number={tab.number} filled={gaugeFilled(tab.number, Boolean(results[tab.number - 1]))} />
+          <QuizCard
+            key={tab.problem.id}
+            problem={tab.problem}
+            onGraded={onGraded}
+            onNext={onNext}
+            nextLabel={tab.number >= SET_SIZE ? "결과 보기" : undefined}
+            pinNext
+          />
         </>
+      )}
+      {tab.stage === "result" && !pastShown && (
+        <QuizResult results={results} pastRef={focusBack} onLeave={onLeaveResult} onPast={() => setPastOf(tab)} />
       )}
     </div>
   );
 }
 
+type QuizResultProps = {
+  results: SetResults;
+  pastRef: (element: HTMLElement | null) => void;
+  onLeave: (leave: Leave) => void;
+  onPast: () => void;
+};
+
+// 누른 결과 보기 버튼이 사라지므로 제목으로 포커스를 옮긴다. 이어 풀기로 결과가 뜰 때는 패널 밖에서 읽던 자리를 빼앗지 않는다.
+// 결과가 길면 아래 두 버튼은 패널 아래에 붙어 늘 보인다.
+function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="-mx-2.5 -mt-5 flex h-[47px] flex-none items-center">
+        <button type="button" aria-label="퀴즈 홈" title="퀴즈 홈" onClick={() => onLeave("home")} className="tool-btn">
+          <House size={18} aria-hidden />
+        </button>
+      </div>
+      <div className="quiz-done flex flex-col items-center px-1 text-center">
+        <Burst>
+          <Mascot size={72} spin landing={setAllRight(results) ? "grin" : "open"} />
+        </Burst>
+        <h2 ref={focusOnMount} tabIndex={-1} className="mt-3 mb-1.5 text-lg leading-snug font-bold tracking-[-0.02em] outline-none">
+          {setTitle(results)}
+        </h2>
+        <p className="mb-4 text-[13.5px] leading-relaxed text-gray">{setGuide(results)}</p>
+      </div>
+      <ol className="mt-1 rounded-lg bg-[color-mix(in_srgb,var(--color-bg)_80%,#fff)] px-4 py-1">
+        {setItems(results).map((slot, index) => (
+          <li
+            key={index}
+            className="flex items-center justify-between gap-3 border-t border-[color-mix(in_srgb,var(--color-line)_55%,var(--color-bg))] py-2.5 first:border-t-0"
+          >
+            <span className="min-w-0 text-sm font-semibold text-ink">
+              {index + 1}. {slot.conceptTitle}
+            </span>
+            <ResultChipLabel chip={slot.chip} />
+          </li>
+        ))}
+      </ol>
+      <div className="sticky -bottom-5 z-2 mt-4.5 -mb-5 flex gap-2 bg-white pt-3 pb-5 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-linear-to-b before:from-white/0 before:to-white">
+        <button type="button" ref={pastRef} onClick={onPast} className="btn flex-1">
+          지난 문제 보기
+        </button>
+        <button type="button" onClick={() => onLeave("restart")} className="btn btn-dark flex-1">
+          새 문제 풀기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // 안내 문구는 응답을 받은 뒤에 보여 준다. 받기 전에 한쪽 문구를 띄우면 틀린 안내가 잠깐 보인다.
-function QuizHome({ unitId, onStart }: { unitId: string; onStart: () => void }) {
+type QuizHomeProps = { unitId: string; pastRef: (element: HTMLElement | null) => void; onStart: () => void; onPast: () => void };
+
+function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
   const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean }>();
   useEffect(() => {
     let current = true;
@@ -227,7 +396,7 @@ function QuizHome({ unitId, onStart }: { unitId: string; onStart: () => void }) 
 
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">
-      <Mascot size={96} />
+      <QuizHomeArt />
       <h2 className="mt-3 mb-1.5 text-[21px] font-bold tracking-tight">확인 문제</h2>
       {known !== undefined && (
         <p className="text-[13.5px] leading-relaxed text-gray">
@@ -240,8 +409,7 @@ function QuizHome({ unitId, onStart }: { unitId: string; onStart: () => void }) 
         <button type="button" onClick={onStart} className="btn btn-dark btn-lg btn-block">
           AI 맞춤 문제 풀기
         </button>
-        {/* 지난 문제 목록은 4-135에서 붙인다. */}
-        <button type="button" disabled className="btn btn-lg btn-block">
+        <button type="button" ref={pastRef} onClick={onPast} className="btn btn-lg btn-block">
           지난 문제 보기
         </button>
       </div>

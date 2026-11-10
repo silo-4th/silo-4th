@@ -180,6 +180,7 @@ test("TC-179 대화한 개념으로 만든 문제를 퀴즈 탭에서 풀면 풀
 
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
 
   const attempts = await db
@@ -247,7 +248,12 @@ async function firstConcept(unitId: string) {
   return found;
 }
 
-async function storeProblem(learnerId: string, saved: { id: string; title: string }, stem: string): Promise<ProblemView> {
+async function storeProblem(
+  learnerId: string,
+  saved: { id: string; title: string },
+  stem: string,
+  explanation = "그룹 조건은 HAVING에 써요.",
+): Promise<ProblemView> {
   const choices = ["WHERE", "HAVING", "ORDER BY", "LIMIT"];
   const [stored] = await db
     .insert(quizProblem)
@@ -258,7 +264,7 @@ async function storeProblem(learnerId: string, saved: { id: string; title: strin
       stem,
       answer: { choices: choices.map((text) => ({ text })), answerIndex: 1 },
       hint: "그룹을 만든 뒤에 걸러요.",
-      explanation: "그룹 조건은 HAVING에 써요.",
+      explanation,
     })
     .returning();
   if (!stored) throw new Error("문제를 넣지 못했다.");
@@ -396,34 +402,58 @@ test("TC-213 다시 낸 기본 문제는 문제를 내준 시각 뒤의 풀이�
   expect(await solvedWhenShownAt(new Date(answeredAt.getTime() + 60_000))).toBe(false);
 });
 
-test("TC-218 퀴즈 탭에서 답을 채점받으면 진행 게이지가 한 칸 차고, 패널 아래에 고정된 다음 문제 버튼이 보여요", async ({ page, learnerId }) => {
+test("TC-218 퀴즈 탭에서 답을 채점받으면 진행 게이지가 한 칸 차고, 다음 문제 버튼이 해설 바로 아래에 붙으며 해설이 길면 패널 아래에 고정돼요", async ({ page, learnerId }) => {
   const [first] = await firstUnits(1);
   if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
-  const view = await storeProblem(learnerId, await firstConcept(first.id), "GROUP BY로 묶은 뒤 그룹 조건은 어디에 쓰나요?");
-  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: view }));
+  const saved = await firstConcept(first.id);
+  const short = await storeProblem(learnerId, saved, "GROUP BY로 묶은 뒤 그룹 조건은 어디에 쓰나요?");
+  const longExplanation = Array.from({ length: 40 }, (_, index) => `${index + 1}. 그룹을 만든 뒤 거르는 조건은 HAVING에 써요.`).join("\n\n");
+  const long = await storeProblem(learnerId, saved, "그룹을 거르는 조건은 어디에 쓰나요?", longExplanation);
+  const views = [short, long];
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
 
   await page.goto(`/study/${first.id}`);
   await tab(page, "퀴즈").click();
   await startQuiz(page);
   const panel = quizPanel(page);
   const card = panel.getByRole("region", { name: "퀴즈" });
-  await expect(card.getByText(view.stem)).toBeVisible();
+  await expect(card.getByText(short.stem)).toBeVisible();
   const gauge = panel.getByRole("progressbar", { name: "문제 진행" });
   await expect(gauge).toHaveAttribute("aria-valuemax", "3");
   await expect(gauge).toHaveAttribute("aria-valuenow", "0");
   await expect(panel.getByText("1 / 3")).toBeVisible();
+  await panel.getByRole("button", { name: "닫기", exact: true }).click();
 
   await card.getByText("HAVING", { exact: true }).click();
   await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   await expect(gauge).toHaveAttribute("aria-valuenow", "1");
 
+  const learningPanel = page.getByRole("complementary", { name: "학습 패널" });
   const next = panel.getByRole("button", { name: "다음 문제" });
   await expect(next).toBeVisible();
   const nextBox = await next.boundingBox();
-  const panelBox = await page.getByRole("complementary", { name: "학습 패널" }).boundingBox();
-  if (!nextBox || !panelBox) throw new Error("버튼과 패널이 화면에 있어야 한다.");
-  expect(panelBox.y + panelBox.height - (nextBox.y + nextBox.height)).toBeLessThan(nextBox.height);
+  const explanationBox = await card.getByText("그룹 조건은 HAVING에 써요.").boundingBox();
+  const panelBox = await learningPanel.boundingBox();
+  if (!nextBox || !explanationBox || !panelBox) throw new Error("버튼, 해설, 패널이 화면에 있어야 한다.");
+  expect(nextBox.y - (explanationBox.y + explanationBox.height)).toBeLessThan(48);
+  expect(panelBox.y + panelBox.height - (nextBox.y + nextBox.height)).toBeGreaterThan(nextBox.height);
+
+  await next.click();
+  await expect(card.getByText(long.stem)).toBeVisible();
+  await card.getByText("HAVING", { exact: true }).click();
+  await card.getByRole("button", { name: "확실해요" }).click();
+  await card.getByRole("button", { name: "정답 확인" }).click();
+  await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+
+  const pinned = panel.getByRole("button", { name: "다음 문제" });
+  await expect(pinned).toBeVisible();
+  const pinnedBox = await pinned.boundingBox();
+  const longPanelBox = await learningPanel.boundingBox();
+  if (!pinnedBox || !longPanelBox) throw new Error("버튼과 패널이 화면에 있어야 한다.");
+  expect(longPanelBox.y + longPanelBox.height - (pinnedBox.y + pinnedBox.height)).toBeLessThan(pinnedBox.height);
 });
 
 test("TC-237 퀴즈 탭에 처음 들어가면 퀴즈 홈이 보이고 문제를 요청하지 않다가, AI 맞춤 문제 풀기를 누르면 열린 단원으로 첫 문제가 떠요", async ({ page, learnerId }) => {
@@ -468,4 +498,166 @@ test("TC-238 이 단원에서 본 절도 대화도 없는 학습자는 퀴즈 �
   await tab(page, "퀴즈").click();
 
   await expect(quizPanel(page).getByText("아직 나눈 대화가 없어서 기출 문제로 준비했어요")).toBeVisible();
+});
+
+async function solveSet(page: Page, views: ProblemView[]) {
+  const panel = quizPanel(page);
+  for (const [index, view] of views.entries()) {
+    const card = panel.getByRole("region", { name: "퀴즈" });
+    await expect(card.getByText(view.stem)).toBeVisible();
+    await card.getByText("HAVING", { exact: true }).click();
+    await card.getByRole("button", { name: "확실해요" }).click();
+    await card.getByRole("button", { name: "정답 확인" }).click();
+    await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+    if (index === views.length - 1) break;
+    await expect(panel.getByRole("button", { name: "결과 보기" })).toHaveCount(0);
+    await panel.getByRole("button", { name: "다음 문제" }).click();
+  }
+  await expect(panel.getByRole("button", { name: "다음 문제" })).toHaveCount(0);
+  await panel.getByRole("button", { name: "결과 보기" }).click();
+}
+
+async function storeProblems(learnerId: string, unitId: string, count: number) {
+  const saved = await firstConcept(unitId);
+  const views: ProblemView[] = [];
+  for (let index = 1; index <= count; index += 1) views.push(await storeProblem(learnerId, saved, `그룹 조건 문제 ${index}`));
+  return views;
+}
+
+test("TC-248 퀴즈 탭에서 세 문제를 풀면 마지막 문제에 결과 보기가 보이고, 누르면 제목, 문항별 칩, 안내, 새 문제 풀기, 지난 문제 보기, 퀴즈 홈 버튼이 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await solveSet(page, views);
+
+  const panel = quizPanel(page);
+  await expect(panel.getByRole("heading", { name: "3개 모두 맞혔어요" })).toBeVisible();
+  await expect(panel.getByText("맞혔어요", { exact: true })).toHaveCount(3);
+  await expect(panel.getByText("이 흐름 그대로 다음 단원으로 가도 좋아요.")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "새 문제 풀기" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "지난 문제 보기" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "퀴즈 홈" })).toBeVisible();
+  expect(served).toBe(3);
+});
+
+test("TC-282 퀴즈 탭 결과 화면에서 지난 문제 보기를 누르면 방금 푼 문제가 있는 지난 문제 목록이 열리고, 돌아가기를 누르면 결과 화면으로 돌아와요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await solveSet(page, views);
+
+  const panel = quizPanel(page);
+  const title = panel.getByRole("heading", { name: "3개 모두 맞혔어요" });
+  await expect(title).toBeVisible();
+  await panel.getByRole("button", { name: "지난 문제 보기" }).click();
+
+  await expect(panel.getByRole("list", { name: "지난 문제 목록" }).getByRole("listitem")).toHaveCount(3);
+  await panel.getByRole("button", { name: "돌아가기" }).click();
+  await expect(title).toBeVisible();
+});
+
+test("TC-257 세 문제를 풀고 결과 화면에서 새 문제 풀기를 누르면 베타 안내 모달이 뜨고, 퀴즈 홈으로 나가 새로고침한 뒤 AI 맞춤 문제 풀기를 눌러도 같은 안내가 뜨며 문제를 만들지 않아요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await solveSet(page, views);
+
+  const panel = quizPanel(page);
+  const notice = page.getByRole("dialog", { name: "아직 베타 단계예요" });
+  await panel.getByRole("button", { name: "새 문제 풀기" }).click();
+  await expect(notice).toBeVisible();
+  await notice.getByRole("button", { name: "확인" }).click();
+  await expect(notice).toBeHidden();
+  await panel.getByRole("button", { name: "퀴즈 홈" }).click();
+
+  await page.reload();
+  await tab(page, "퀴즈").click();
+  await startQuiz(page);
+  await expect(notice).toBeVisible();
+  await expect(panel.getByRole("button", { name: "AI 맞춤 문제 풀기" })).toBeVisible();
+  expect(served).toBe(3);
+});
+
+test("TC-255 퀴즈 홈에서 지난 문제 보기를 누르면 푼 문제가 보이고, 거르고 펼쳐 답과 해설을 본 뒤 돌아가기로 퀴즈 홈에 와요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  const home = panel.getByRole("button", { name: "AI 맞춤 문제 풀기" });
+  const past = panel.getByRole("button", { name: "지난 문제 보기" });
+  const back = panel.getByRole("button", { name: "돌아가기" });
+  await expect(home).toBeVisible();
+
+  await past.click();
+  await expect(panel.getByText("아직 푼 확인 문제가 없어요.")).toBeVisible();
+  await expect(panel.getByText("문제를 풀면 여기에 모여요.")).toBeVisible();
+  await back.click();
+  await expect(home).toBeVisible();
+
+  await startQuiz(page);
+  for (const [index, view] of views.entries()) {
+    const card = panel.getByRole("region", { name: "퀴즈" });
+    await expect(card.getByText(view.stem)).toBeVisible();
+    await card.getByText(index === 1 ? "WHERE" : "HAVING", { exact: true }).click();
+    await card.getByRole("button", { name: "확실해요" }).click();
+    await card.getByRole("button", { name: "정답 확인" }).click();
+    await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
+    await panel.getByRole("button", { name: index === views.length - 1 ? "결과 보기" : "다음 문제" }).click();
+  }
+  await panel.getByRole("button", { name: "퀴즈 홈" }).click();
+  await past.click();
+
+  const list = panel.getByRole("list", { name: "지난 문제 목록" });
+  const items = list.getByRole("listitem");
+  await expect(items).toHaveCount(3);
+  const expected = [
+    { stem: views[2]?.stem, chip: "맞혔어요" },
+    { stem: views[1]?.stem, chip: "틀렸어요" },
+    { stem: views[0]?.stem, chip: "맞혔어요" },
+  ];
+  for (const [index, { stem, chip }] of expected.entries()) {
+    const item = items.nth(index);
+    await expect(item.getByText(stem ?? "", { exact: true })).toBeVisible();
+    await expect(item.getByText(first.title, { exact: true })).toBeVisible();
+    await expect(item.getByText("객관식", { exact: true })).toBeVisible();
+    await expect(item.getByText(chip, { exact: true })).toBeVisible();
+  }
+
+  await panel.getByRole("button", { name: "틀림", exact: true }).click();
+  await expect(items).toHaveCount(1);
+  const wrong = items.first();
+  await expect(wrong.getByText(views[1]?.stem ?? "", { exact: true })).toBeVisible();
+
+  await wrong.getByText(views[1]?.stem ?? "", { exact: true }).click();
+  await expect(wrong.getByText("내 답", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("WHERE", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("정답", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("HAVING", { exact: true })).toBeVisible();
+  await expect(wrong.getByText("그룹 조건은 HAVING에 써요.", { exact: true })).toBeVisible();
+
+  await back.click();
+  await expect(home).toBeVisible();
 });
