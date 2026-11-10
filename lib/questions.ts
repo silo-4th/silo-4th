@@ -373,6 +373,14 @@ export async function sessionTurns(learnerId: string, sessionId: string): Promis
       unitId: question.unitId,
       content: message.content,
       selectedText: message.selectedText,
+      // 드래그 질문을 새 ID로 다시 물을 때 처음과 같은 절 개념을 붙이도록 함께 돌려준다.
+      // 다른 단원 개념은 인트로처럼 AI가 분류한 개념이라 보내면 거절되므로 뺀다.
+      sectionConceptId: sql<string | null>`case when ${message.selectedText} is null then null else (
+        select ${questionConcept.conceptId} from ${questionConcept}
+        inner join ${concept} on ${concept.id} = ${questionConcept.conceptId}
+        where ${questionConcept.questionId} = ${question.id} and ${concept.unitId} = ${question.unitId}
+        limit 1
+      ) end`,
       answer: answer.content,
     })
     .from(question)

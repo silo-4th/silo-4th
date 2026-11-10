@@ -1,10 +1,11 @@
 export type SessionSummary = { id: string; title: string };
-// answer가 null이면 답을 받지 못한 질문이다. selectedText는 본문에서 드래그해 물어본 문장이다.
+// answer가 null이면 답을 받지 못한 질문이다. selectedText는 본문에서 드래그해 물어본 문장이고, sectionConceptId는 그 문장의 절 개념이다.
 export type SessionTurn = {
   questionId: string;
   unitId: string | null;
   content: string;
   selectedText: string | null;
+  sectionConceptId: string | null;
   answer: string | null;
 };
 

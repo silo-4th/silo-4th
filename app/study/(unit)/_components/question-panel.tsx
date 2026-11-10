@@ -90,9 +90,16 @@ async function fetchJson<T>(url: string): Promise<T | undefined> {
 function savedTurn(
   sessionId: string,
   openedUnitId: string,
-  { questionId, unitId, content, selectedText, answer }: SessionTurn,
+  { questionId, unitId, content, selectedText, sectionConceptId, answer }: SessionTurn,
 ): Turn {
-  const question = { id: questionId, sessionId, unitId: unitId ?? openedUnitId, content, selectedText: selectedText ?? undefined };
+  const question = {
+    id: questionId,
+    sessionId,
+    unitId: unitId ?? openedUnitId,
+    content,
+    selectedText: selectedText ?? undefined,
+    sectionConceptId: sectionConceptId ?? undefined,
+  };
   return answer === null ? { ...question, status: "failed", reason: "failed" } : { ...question, status: "answered", answer };
 }
 
