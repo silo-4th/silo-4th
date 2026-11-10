@@ -226,7 +226,7 @@ test("TC-192 대화 중 관련 문제 풀어보기를 누르면 퀴즈 탭으로
   await expect(panel.getByText("1 / 3")).toBeVisible();
 
   await tab(page, "AI 에이전트").click();
-  await page.getByRole("tabpanel", { name: "에이전트" }).getByRole("button", { name: "관련 문제 풀어보기" }).click();
+  await page.getByRole("tabpanel", { name: "에이전트" }).getByRole("button", { name: "관련 문제 풀기" }).click();
 
   await expect(tab(page, "퀴즈")).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByText("문제를 만들고 있어요")).toBeVisible();
