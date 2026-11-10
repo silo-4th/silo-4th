@@ -151,7 +151,6 @@
   .panel-menu-head { height: 47px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 --spacing(1.5) 0 --spacing(4); border-bottom: 1px solid var(--color-line-2); font-weight: 700; }
   .panel-menu-head .head-icon { width: 30px; height: 30px; }
   .panel-menu-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: --spacing(3); }
-  .panel-menu-empty { padding: --spacing(8) --spacing(5); text-align: center; color: var(--color-gray); }
   .menu-row { width: 100%; display: flex; align-items: center; gap: --spacing(2.5); padding: --spacing(2.5) --spacing(4); text-align: left; color: var(--color-ink-2); transition: background 0.15s; }
   .menu-row:hover { background: var(--color-bg); }
   .menu-row[aria-current="true"] { background: var(--color-green-25); }
@@ -188,6 +187,11 @@
   .msg.bot > .mascot { margin-top: 2px; }
   .bubble { background: var(--color-bg); padding: --spacing(3) --spacing(3.5); border-radius: 4px 14px 14px 14px; min-width: 0; }
   .bubble > :last-child { margin-bottom: 0; }
+  .bubble.bubble-error { display: inline-flex; flex-direction: column; align-items: flex-start; gap: --spacing(2); color: var(--color-red); background: var(--color-red-50); }
+  .bubble-error-msg { display: flex; align-items: center; gap: --spacing(1.5); font-weight: 500; }
+  .bubble-retry { align-self: center; display: inline-flex; align-items: center; gap: --spacing(1); height: 28px; padding: 0 --spacing(3); border: 1px solid var(--color-line); border-radius: 999px; background: #fff; font-size: 12.5px; font-weight: 600; letter-spacing: normal; color: var(--color-ink-2); }
+  .bubble-retry:hover { border-color: var(--color-gray-3); color: var(--color-ink); }
+  .chat-list .msg.msg-follow { margin-top: calc(-1 * --spacing(2)); }
   .bot-actions { display: flex; flex-wrap: wrap; gap: --spacing(1.5); margin: --spacing(-1) 0 0 36px; }
   .bot-actions button { height: 28px; padding: 0 --spacing(2.5); border-radius: 14px; border: 1px solid var(--color-line); background: #fff; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: --spacing(1); transition: border-color 0.2s, background 0.2s; }
   .bot-actions button:hover { border-color: #9fe3c4; background: var(--color-green-25); }
@@ -200,7 +204,8 @@
 
   .composer { flex: none; margin: 0 --spacing(4) --spacing(2.5); border: 1px solid var(--color-line); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-card); overflow: hidden; transition: border-color 0.15s; display: grid; grid-template-columns: 1fr auto; }
   .composer:focus-within { border-color: var(--color-gray-3); }
-  .composer textarea { width: 100%; border: 0; resize: none; padding: --spacing(3.5) --spacing(1.5) --spacing(3.5) --spacing(4); background: transparent; height: 70px; min-height: 70px; max-height: 136px; line-height: 21px; outline: none; font-size: 14px; }
+  .composer textarea { width: 100%; border: 0; resize: none; padding: --spacing(3.5) --spacing(1.5) --spacing(3.5) --spacing(4); background: transparent; height: 70px; min-height: 70px; max-height: 136px; line-height: 21px; outline: none; font-size: 14px; letter-spacing: normal; }
+  .composer textarea::placeholder { color: #757575; }
   .composer-bar { align-self: end; display: flex; padding: 0 --spacing(3) --spacing(3) 0; }
   .send { width: 32px; height: 32px; border-radius: 50%; background: var(--color-green); color: #fff; display: grid; place-items: center; }
   .send:disabled { background: var(--color-line); }
@@ -351,6 +356,14 @@
   & th, & td { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); padding: 0.25rem 0.5rem; }
   & code { font-family: var(--font-mono); font-size: 0.9em; }
   & pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.25rem; background: color-mix(in srgb, currentColor 6%, transparent); }
+}
+
+/* 에이전트 답 말풍선은 시안처럼 대화 줄 높이를 따르고, 문단 사이는 빈 줄 하나인 8px만 띄운다. */
+.bubble.unit-body {
+  line-height: 1.65;
+
+  & p, & ul, & ol, & table, & pre { margin-bottom: 8px; }
+  & > :last-child { margin-bottom: 0; }
 }
 
 /* 학습 화면 단원 본문 리더. 시안 Workspace의 .reader를 따르고 .unit-body 위에 덮는다. */

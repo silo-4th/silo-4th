@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, type Page, type Route } from "@playwright/test";
-import { createLearner, deleteLearner, firstUnits, saveAnswered, test } from "./fixtures";
+import { createLearner, deleteLearner, firstUnits, saveAnswered, signIn, test } from "./fixtures";
 
 type AskBody = { questionId: string; sessionId: string; unitId: string; content: string };
 type StreamStub = { answerStreams: ((chunk: string) => void)[] };
@@ -8,7 +8,7 @@ type StreamStub = { answerStreams: ((chunk: string) => void)[] };
 const delta = (text: string) => `event: delta\ndata: ${JSON.stringify({ text })}\n\n`;
 const DONE = "event: done\ndata: {}\n\n";
 const ERROR = "event: error\ndata: {}\n\n";
-const FAILED = "답을 가져오지 못했어요. 다시 보내 주세요.";
+const FAILED = "답을 가져오지 못했어요.";
 
 function fulfillStream(route: Route, body: string) {
   return route.fulfill({ status: 200, contentType: "text/event-stream; charset=utf-8", body });
@@ -179,7 +179,7 @@ test("TC-57 끊긴 질문을 다시 시도했는데 처리 중이면 새 질문 
   await page.getByRole("textbox", { name: "질문" }).fill(question);
   await page.getByRole("button", { name: "보내기", exact: true }).click();
 
-  await expect(page.getByText("응답이 끊겼어요")).toBeVisible();
+  await expect(page.getByText("답이 중간에 끊겼어요.")).toBeVisible();
 
   await page.getByRole("button", { name: "다시 시도" }).click();
 
@@ -189,7 +189,7 @@ test("TC-57 끊긴 질문을 다시 시도했는데 처리 중이면 새 질문 
   expect(bodies[2]).toMatchObject({ unitId: bodies[0]?.unitId, content: question });
   expect(bodies[2]?.questionId).not.toBe(bodies[0]?.questionId);
   await expect(conversation.filter({ hasText: question })).toHaveCount(1);
-  await expect(page.getByText("응답이 끊겼어요")).toHaveCount(0);
+  await expect(page.getByText("답이 중간에 끊겼어요.")).toHaveCount(0);
 });
 
 test("TC-58 질문을 보냈는데 로그인이 풀렸으면 첫 화면으로 가요", async ({ page, context }) => {
@@ -342,4 +342,171 @@ test("TC-80 학습셋을 바꿔도 지금 대화가 그대로 남아요", async 
   await expect(conversation).toHaveText(["남아 있을 질문", "남아 있을 답"]);
   await history.click();
   await expect(sessions).toHaveCount(1);
+});
+
+// 지난 대화 둘을 저장한다. 나중에 저장한 대화가 목록 맨 위라 처음에 열리고, 먼저 저장한 대화는 대화 기록에서 연다.
+async function saveTwoSessions(learnerId: string) {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 없다.");
+  const past = { questionId: randomUUID(), sessionId: randomUUID(), unitId: first.id, content: "지난 질문" };
+  await saveAnswered(learnerId, past, "지난 답");
+  await saveAnswered(
+    learnerId,
+    { questionId: randomUUID(), sessionId: randomUUID(), unitId: first.id, content: "최근 질문" },
+    "최근 답",
+  );
+  return past.sessionId;
+}
+
+async function answerAndSave(page: Page, learnerId: string) {
+  await page.route("**/api/questions", async (route) => {
+    const body = route.request().postDataJSON() as AskBody;
+    const answer = `${body.content}의 답`;
+    await saveAnswered(learnerId, body, answer);
+    await fulfillStream(route, delta(answer) + DONE);
+  });
+}
+
+test("TC-302 지난 대화를 불러오지 못하면 실패 화면과 다시 시도만 보이고 입력창은 숨겨지며, 다시 시도하면 지난 대화와 입력창이 보여요", async ({
+  page,
+  learnerId,
+}) => {
+  const pastSession = await saveTwoSessions(learnerId);
+  let loads = 0;
+  await page.route(`**/api/question-sessions/${pastSession}`, (route) => {
+    loads += 1;
+    return loads === 1 ? route.fulfill({ status: 500 }) : route.continue();
+  });
+  const { input, history, conversation, sessions } = panel(page);
+  const failed = page.getByRole("heading", { name: "지난 대화를 불러오지 못했어요" });
+
+  await page.goto("/study");
+  await expect(conversation).toHaveText(["최근 질문", "최근 답"]);
+  await history.click();
+  await sessions.getByRole("button", { name: "지난 질문" }).click();
+
+  await expect(failed).toBeVisible();
+  await expect(input).toHaveCount(0);
+
+  await page.getByRole("button", { name: "다시 시도" }).click();
+
+  await expect(conversation).toHaveText(["지난 질문", "지난 답"]);
+  await expect(failed).toHaveCount(0);
+  await expect(input).toBeVisible();
+});
+
+test("TC-303 대화 기록 목록을 불러오지 못하면 메뉴에 실패 화면과 다시 시도가 보이고 다시 시도하면 목록이 보이며, 기록이 없는 학습자에게는 다시 시도 없이 기록이 없다는 안내만 보여요", async ({
+  page,
+  context,
+  baseURL,
+  learnerId,
+}) => {
+  await saveTwoSessions(learnerId);
+  let retried = false;
+  await page.route("**/api/question-sessions", (route) =>
+    retried ? route.continue() : route.fulfill({ status: 500 }),
+  );
+  const { history, sessions } = panel(page);
+  const menu = page.getByRole("navigation", { name: "대화 기록" });
+
+  await page.goto("/study");
+  await history.click();
+
+  await expect(menu.getByRole("heading", { name: "대화 기록을 불러오지 못했어요" })).toBeVisible();
+
+  retried = true;
+  await menu.getByRole("button", { name: "다시 시도" }).click();
+
+  await expect(sessions.getByRole("button", { name: "지난 질문" })).toBeVisible();
+  await expect(sessions.getByRole("button", { name: "최근 질문" })).toBeVisible();
+  await expect(menu.getByRole("heading", { name: "대화 기록을 불러오지 못했어요" })).toHaveCount(0);
+
+  if (!baseURL) throw new Error("baseURL이 없다.");
+  const other = await createLearner();
+  try {
+    await signIn(context, baseURL, other);
+    await page.goto("/study");
+    await history.click();
+
+    await expect(menu.getByText("아직 대화 기록이 없어요")).toBeVisible();
+    await expect(menu.getByRole("button", { name: "다시 시도" })).toHaveCount(0);
+  } finally {
+    await deleteLearner(other);
+  }
+});
+
+test("TC-304 답이 오다가 끊기면 받은 글은 남고 그 아래에 끊겼다는 안내와 다시 시도가 보이며, 다시 시도하면 받던 글 대신 새 답만 남아요", async ({
+  page,
+}) => {
+  let asked = 0;
+  await page.route("**/api/questions", (route) => {
+    asked += 1;
+    return fulfillStream(route, asked === 1 ? delta("WHERE는 묶기 전") : delta("HAVING은 묶은 그룹을 걸러요.") + DONE);
+  });
+  const { input, send, conversation } = panel(page);
+  const cut = page.getByText("답이 중간에 끊겼어요.");
+
+  await page.goto("/study");
+  await input.fill("WHERE와 HAVING은 어떻게 달라요?");
+  await send.click();
+
+  await expect(conversation.filter({ hasText: "WHERE는 묶기 전" })).toBeVisible();
+  await expect(cut).toBeVisible();
+
+  await page.getByRole("button", { name: "다시 시도" }).click();
+
+  await expect(conversation).toHaveText(["WHERE와 HAVING은 어떻게 달라요?", "HAVING은 묶은 그룹을 걸러요."]);
+  await expect(conversation.filter({ hasText: "WHERE는 묶기 전" })).toHaveCount(0);
+  await expect(cut).toHaveCount(0);
+});
+
+test("TC-307 지난 대화를 불러오는 동안에는 질문 입력창이 잠기고, 대화가 오면 다시 질문을 쓸 수 있어요", async ({
+  page,
+  learnerId,
+}) => {
+  const pastSession = await saveTwoSessions(learnerId);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**/api/question-sessions/${pastSession}`, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await answerAndSave(page, learnerId);
+  const { input, send, history, conversation, sessions } = panel(page);
+
+  await page.goto("/study");
+  await expect(conversation).toHaveText(["최근 질문", "최근 답"]);
+  await history.click();
+  await sessions.getByRole("button", { name: "지난 질문" }).click();
+
+  await expect(input).toBeDisabled();
+
+  release();
+
+  await expect(input).toBeEnabled();
+  await input.fill("새 질문");
+  await send.click();
+
+  await expect(conversation).toHaveText(["지난 질문", "지난 답", "새 질문", "새 질문의 답"]);
+});
+
+test("TC-308 대화 기록 목록을 불러오지 못하면 대화 자리에는 실패 화면 대신 빈 대화 인사가 보이고, 실패 화면은 대화 기록 메뉴 안에만 보여요", async ({
+  page,
+  learnerId,
+}) => {
+  await saveTwoSessions(learnerId);
+  await page.route("**/api/question-sessions", (route) => route.fulfill({ status: 500 }));
+  const { history } = panel(page);
+  const menu = page.getByRole("navigation", { name: "대화 기록" });
+
+  await page.goto("/study");
+
+  await expect(page.getByText("오늘은 무엇부터 해볼까요?")).toBeVisible();
+  await expect(page.getByText("지난 대화를 불러오지 못했어요")).toHaveCount(0);
+
+  await history.click();
+
+  await expect(menu.getByRole("heading", { name: "대화 기록을 불러오지 못했어요" })).toBeVisible();
 });

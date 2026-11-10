@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, ListChecks, Menu, SquarePen } from "lucide-react";
+import { ArrowUp, ListChecks, Menu, RotateCw, SquarePen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { type FormEvent, Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
@@ -29,8 +29,8 @@ const NOTICE_MS = 2_500;
 const OPENED_SESSION_KEY = "question-panel-session";
 
 const FAIL_MESSAGES = {
-  failed: "답을 가져오지 못했어요. 다시 보내 주세요.",
-  cut: "응답이 끊겼어요",
+  failed: "답을 가져오지 못했어요.",
+  cut: "답이 중간에 끊겼어요.",
 };
 
 // 비교는 아직 베타라 질문을 보내지 않고 안내만 띄운다.
@@ -47,7 +47,9 @@ type Turn = Question &
   (
     | { status: "sending"; answer: string; slow: boolean }
     | { status: "answered"; answer: string }
-    | { status: "failed"; reason: keyof typeof FAIL_MESSAGES }
+    // 끊긴 답은 받은 데까지 partial로 남겨 보여 주고, 다시 시도하면 지우고 처음부터 다시 묻는다.
+    | { status: "failed"; reason: "failed" }
+    | { status: "failed"; reason: "cut"; partial: string }
   );
 
 // 브라우저가 저장소를 막아 두면 읽기와 쓰기가 예외를 던진다. 기억하지 못해도 질문 창은 쓸 수 있어야 한다.
@@ -105,6 +107,7 @@ export function QuestionPanel({
   const [sessionLoads, setSessionLoads] = useState<Record<string, "loading" | "failed">>({});
   const [listLoad, setListLoad] = useState<"loading" | "failed" | "done">("loading");
   const [listAttempt, setListAttempt] = useState(0);
+  const [hasDraft, setHasDraft] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const historyButton = useRef<HTMLButtonElement>(null);
 
@@ -155,6 +158,8 @@ export function QuestionPanel({
     }
     setListLoad("done");
     setSessions(saved);
+    // 대화 기록 메뉴에서 다시 받은 목록은 메뉴에만 보여 주고, 학습자가 보던 대화는 바꾸지 않는다.
+    if (openedSession) return;
     const remembered = readOpenedSession();
     const sessionId = saved.find(({ id }) => id === remembered)?.id ?? saved[0]?.id;
     if (sessionId) openSession(sessionId);
@@ -224,12 +229,17 @@ export function QuestionPanel({
     if (reason === "pending" && replacing === question.id) {
       return ask({ ...question, id: crypto.randomUUID() }, question.id);
     }
-    update(question.id, () => ({ ...question, status: "failed", reason: reason === "pending" ? "failed" : reason }));
+    update(question.id, (turn) =>
+      reason === "cut"
+        ? { ...question, status: "failed", reason, partial: turn.status === "sending" ? turn.answer : "" }
+        : { ...question, status: "failed", reason: "failed" },
+    );
   }
 
   function send(formData: FormData) {
     // 빈 질문이어도 폼은 비워지므로, 늘어난 입력창 높이를 먼저 되돌린다.
     if (input.current) input.current.style.height = "";
+    setHasDraft(false);
     sendQuestion(String(formData.get("question") ?? "").trim());
   }
 
@@ -246,11 +256,11 @@ export function QuestionPanel({
   }
 
   // 한글을 조합하는 중에 누른 Enter는 글자를 확정하는 입력이라 보내지 않는다.
-  // 열 세션을 정하기 전에는 보내지 않고, 쓰던 질문도 지우지 않는다.
+  // 보낼 수 없을 때는 보내지 않고, 쓰던 질문도 지우지 않는다.
   function sendOnEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    if (openedSession) event.currentTarget.form?.requestSubmit();
+    if (canSend) event.currentTarget.form?.requestSubmit();
   }
 
   // 글이 늘면 입력창도 CSS의 최대 높이까지 함께 늘고, 그보다 길면 안에서 스크롤된다.
@@ -258,6 +268,7 @@ export function QuestionPanel({
     const field = event.currentTarget;
     field.style.height = "";
     field.style.height = `${field.scrollHeight}px`;
+    setHasDraft(field.value.trim() !== "");
   }
 
   // 메뉴를 닫으면 누른 대화 기록 버튼으로 포커스를 돌려 키보드 사용자가 자리를 잃지 않게 한다.
@@ -273,8 +284,10 @@ export function QuestionPanel({
   const last = shown.at(-1);
   // 목록에 있는 세션은 저장된 질문이 있으므로, 불러오는 중이거나 불러오지 못했을 때도 빈 대화 인사를 띄우지 않는다.
   const empty = shown.length === 0 && openedSession !== undefined && !sessions.some(({ id }) => id === openedSession);
-  // 세션 목록을 받기 전에는 어느 대화든 지난 대화를 받는 중이다.
-  const load = listLoad !== "done" ? listLoad : openedSession === undefined ? "loading" : sessionLoads[openedSession];
+  // 처음 세션 목록을 받기 전에는 열 대화가 없어 지난 대화를 받는 중으로 본다. 목록을 받지 못한 것은 대화 기록 메뉴에서만 알린다.
+  const load = openedSession === undefined ? "loading" : sessionLoads[openedSession];
+  // 시안처럼 쓴 글이 없거나, 지난 대화를 받는 중이거나, 이 대화의 답을 받는 중이면 보내지 않는다.
+  const canSend = hasDraft && load !== "loading" && !shown.some(({ status }) => status === "sending");
 
   return (
     <>
@@ -328,46 +341,66 @@ export function QuestionPanel({
             {load === "failed" && openedSession && (
               <FailState
                 title="지난 대화를 불러오지 못했어요"
-                onRetry={() => (listLoad === "failed" ? retryList() : openSession(openedSession))}
+                onRetry={() => {
+                  // 누른 버튼이 사라지고 입력창도 잠기므로 포커스를 대화 기록 버튼으로 옮긴다.
+                  historyButton.current?.focus();
+                  openSession(openedSession);
+                }}
               />
             )}
-            <ol aria-label="대화" className="chat-list">
-              {shown.map(({ id, sessionId, unitId: askedUnitId, content, ...turn }) => (
-                <Fragment key={id}>
-                  <li className="msg user">{content}</li>
-                  {turn.status !== "failed" && turn.answer && (
-                    <li className="msg bot">
-                      <Mascot size={26} />
-                      <div className="bubble unit-body">
-                        <Markdown remarkPlugins={[remarkGfm]}>{turn.answer}</Markdown>
-                      </div>
-                    </li>
-                  )}
-                  {turn.status === "failed" && (
-                    <li className="msg bot">
-                      <Mascot size={26} mood="plain" />
-                      <div className="bubble">
-                        <p role="alert" className="font-semibold text-red">
-                          {FAIL_MESSAGES[turn.reason]}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            // 누른 버튼이 사라지므로 포커스를 질문 입력으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
-                            input.current?.focus();
-                            void ask({ id, sessionId, unitId: askedUnitId, content });
-                          }}
-                          className="btn btn-sm mt-2.5"
-                        >
-                          다시 시도
-                        </button>
-                      </div>
-                    </li>
-                  )}
-                </Fragment>
-              ))}
-            </ol>
-            {last?.status === "answered" && (
+            {/* 지난 대화를 받는 동안과 받지 못했을 때는 대화를 그리지 않는다.
+                빈 목록을 두면 .chat의 간격이 하나 더 생겨 빈 대화 인사와 실패 화면이 아래로 밀린다. */}
+            {!load && shown.length > 0 && (
+              <ol aria-label="대화" className="chat-list">
+                {shown.map(({ id, sessionId, unitId: askedUnitId, content, ...turn }) => (
+                  <Fragment key={id}>
+                    <li className="msg user">{content}</li>
+                    {turn.status !== "failed" && turn.answer && (
+                      <li className="msg bot">
+                        <Mascot size={26} />
+                        <div className="bubble unit-body">
+                          <Markdown remarkPlugins={[remarkGfm]}>{turn.answer}</Markdown>
+                        </div>
+                      </li>
+                    )}
+                    {turn.status === "failed" && turn.reason === "cut" && turn.partial && (
+                      <li className="msg bot">
+                        <Mascot size={26} />
+                        <div className="bubble unit-body">
+                          <Markdown remarkPlugins={[remarkGfm]}>{`${turn.partial.trimEnd()}…`}</Markdown>
+                        </div>
+                      </li>
+                    )}
+                    {/* 다음 질문을 보내면 앞 질문의 실패 안내와 다시 시도는 거둔다. 끊긴 답은 받은 데까지만 남는다. */}
+                    {turn.status === "failed" && id === last?.id && (
+                      <li className={`msg bot ${turn.reason === "cut" && turn.partial ? "msg-follow" : ""}`}>
+                        {turn.reason === "cut" && turn.partial ? (
+                          <span aria-hidden className="w-[26px] flex-none" />
+                        ) : (
+                          <Mascot size={26} mood="plain" />
+                        )}
+                        <div className="bubble bubble-error">
+                          <span role="alert" className="bubble-error-msg">{FAIL_MESSAGES[turn.reason]}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // 누른 버튼이 사라지므로 포커스를 질문 입력으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
+                              input.current?.focus();
+                              void ask({ id, sessionId, unitId: askedUnitId, content });
+                            }}
+                            className="bubble-retry"
+                          >
+                            <RotateCw size={13} />
+                            다시 시도
+                          </button>
+                        </div>
+                      </li>
+                    )}
+                  </Fragment>
+                ))}
+              </ol>
+            )}
+            {!load && last?.status === "answered" && (
               <div className="bot-actions">
                 <button type="button" onClick={() => onSolveRelated(last.id)}>
                   <ListChecks size={12} />
@@ -403,22 +436,24 @@ export function QuestionPanel({
             </div>
           </div>
         </div>
-        <form action={send} className="composer">
+        {/* 지난 대화를 불러오지 못한 동안에는 다시 시도만 할 수 있게 입력창과 안내를 숨긴다. 쓰던 글은 남겨 둔다. */}
+        <form action={send} hidden={load === "failed"} className="composer">
           <textarea
             ref={input}
             name="question"
             aria-label="질문"
-            placeholder="궁금한 걸 편하게 물어보세요. 예: 이건 언제 써요?"
+            placeholder="궁금한 건 무엇이든 물어보세요"
             onKeyDown={sendOnEnter}
             onInput={growInput}
+            disabled={load === "loading"}
           />
           <div className="composer-bar">
-            <button type="submit" aria-label="보내기" disabled={!openedSession} className="send">
+            <button type="submit" aria-label="보내기" disabled={!canSend} className="send">
               <ArrowUp size={16} />
             </button>
           </div>
         </form>
-        <p className="disclaimer">AI는 실수할 수 있어요. 나눈 대화는 내게 맞는 퀴즈를 만드는 데 활용돼요.</p>
+        <p hidden={load === "failed"} className="disclaimer">AI는 실수할 수 있어요. 나눈 대화는 내게 맞는 퀴즈를 만드는 데 활용돼요.</p>
       </div>
       {/* 낭독기는 이미 있던 알림 영역에 들어온 글만 읽으므로 영역은 늘 두고 안내만 넣었다 뺀다. */}
       <div aria-live="polite">{notice && <p className="toast">{notice.text}</p>}</div>
@@ -430,7 +465,9 @@ export function QuestionPanel({
       {historyOpened && (
         <HistoryMenu
           sessions={sessions}
+          listLoad={listLoad}
           openedSession={openedSession}
+          onRetry={retryList}
           onOpen={(sessionId) => {
             openSession(sessionId);
             closeHistory();
