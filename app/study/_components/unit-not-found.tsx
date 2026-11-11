@@ -19,8 +19,7 @@ export function UnitNotFound({ account }: { account: ReactNode }) {
       }
       title="찾을 수 없는 단원이에요"
       description="주소가 바뀌었거나 없는 단원이에요."
-      actionLabel="내 학습으로 가기"
-      onAction={() => router.push(STUDY_PATH)}
+      action={{ label: "내 학습으로 가기", onAction: () => router.push(STUDY_PATH) }}
     />
   );
 }

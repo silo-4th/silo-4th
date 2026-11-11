@@ -6,12 +6,11 @@ type FullPageFailProps = {
   art: ReactNode;
   title: string;
   description: string;
-  actionLabel: string;
-  onAction: () => void;
+  action?: { label: string; onAction: () => void };
 };
 
-// 없는 단원과 예상하지 못한 오류가 함께 쓰는 전체 화면이다. 퀴즈 탭 실패 화면과 같은 배치를 화면 가운데보다 조금 위에 둔다.
-export function FullPageFail({ account, art, title, description, actionLabel, onAction }: FullPageFailProps) {
+// 없는 단원, 예상하지 못한 오류, 모바일 안내가 함께 쓰는 전체 화면이다. 퀴즈 탭 실패 화면과 같은 배치를 화면 가운데보다 조금 위에 둔다.
+export function FullPageFail({ account, art, title, description, action }: FullPageFailProps) {
   return (
     <>
       <BrandHeader>{account}</BrandHeader>
@@ -20,11 +19,13 @@ export function FullPageFail({ account, art, title, description, actionLabel, on
           {art}
           <h1 className="mt-3 mb-1.5 text-[21px] font-bold tracking-[-0.02em]">{title}</h1>
           <p className="text-[13.5px] leading-[1.6] text-gray">{description}</p>
-          <div className="mt-6 flex w-full flex-col gap-2">
-            <button type="button" onClick={onAction} className="btn btn-dark btn-lg btn-block tracking-normal">
-              {actionLabel}
-            </button>
-          </div>
+          {action && (
+            <div className="mt-6 flex w-full flex-col gap-2">
+              <button type="button" onClick={action.onAction} className="btn btn-dark btn-lg btn-block tracking-normal">
+                {action.label}
+              </button>
+            </div>
+          )}
         </div>
       </main>
     </>
