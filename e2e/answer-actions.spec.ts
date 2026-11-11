@@ -52,6 +52,7 @@ test("TC-311 답을 받으면 마지막 답 아래에 더 쉽게, 예시 보기,
   await expect(asked.locator("blockquote")).toHaveText("질문 A의 답");
   await expect(asked).toContainText(EASIER);
   await expect(actions).toHaveCount(0);
+  await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[1]).toMatchObject({ content: EASIER, selectedText: "질문 A의 답" });
   expect(bodies[1]).not.toHaveProperty("sectionConceptId");
 
