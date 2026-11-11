@@ -32,8 +32,7 @@ export default function GlobalError({ error, retry }: { error: unknown; retry: (
           }
           title="문제가 생겼어요"
           description="잠시 뒤 다시 시도해 주세요."
-          actionLabel="다시 시도"
-          onAction={retry}
+          action={{ label: "다시 시도", onAction: retry }}
         />
       </body>
     </html>
