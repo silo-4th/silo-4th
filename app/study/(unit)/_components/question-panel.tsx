@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, ListChecks, Menu, RotateCw, SquarePen } from "lucide-react";
+import { ArrowUp, Lightbulb, ListChecks, Menu, RotateCw, Sparkles, SquarePen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { type FormEvent, Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
@@ -8,6 +8,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
+import { answerAsk } from "@/lib/answer-quote";
 import { askQuestion } from "@/lib/answer-stream";
 import {
   ANSWER_TONES,
@@ -17,7 +18,7 @@ import {
   saveAnswerTone,
   subscribeAnswerTone,
 } from "@/lib/answer-tone";
-import type { SelectionQuestion } from "@/lib/drag-menu";
+import type { QuoteAsk, SelectionQuestion } from "@/lib/drag-menu";
 import type { SessionSummary, SessionTurn } from "@/lib/question-sessions";
 import { BetaNotice } from "./beta-notice";
 import { HistoryMenu } from "./history-menu";
@@ -286,6 +287,14 @@ export function QuestionPanel({
     ]);
   }
 
+  // 마지막 답을 인용해 드래그 메뉴와 같은 문구로 묻는다. 답에는 절이 없어 절 개념 없이 보낸다.
+  // 누른 버튼은 답을 기다리는 동안 사라지므로 포커스를 질문 입력으로 옮긴다.
+  function askAboutAnswer(turn: { sessionId: string; answer: string }, ask: QuoteAsk) {
+    input.current?.focus();
+    const { content, selectedText } = answerAsk(turn, ask);
+    startQuestion(turn.sessionId, content, selectedText === undefined ? undefined : { text: selectedText, conceptId: null });
+  }
+
   // 보낼 수 없는 동안에는 메뉴 버튼이 막혀 있다.
   const askSelection = useEffectEvent((selectionAsk: SelectionAsk) => {
     if (openedSession) startQuestion(openedSession, selectionAsk.content, selectionAsk.selection);
@@ -447,6 +456,14 @@ export function QuestionPanel({
             )}
             {!load && last?.status === "answered" && (
               <div className="bot-actions">
+                <button type="button" onClick={() => askAboutAnswer(last, "easier")}>
+                  <Sparkles size={12} />
+                  더 쉽게
+                </button>
+                <button type="button" onClick={() => askAboutAnswer(last, "example")}>
+                  <Lightbulb size={12} />
+                  예시 보기
+                </button>
                 <button type="button" onClick={() => onSolveRelated(last.id)}>
                   <ListChecks size={12} />
                   관련 문제 풀기

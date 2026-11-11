@@ -5,9 +5,16 @@ export const SELECTED_TEXT_MAX_LENGTH = 1500;
 const SELECTED_TEXT_MIN_LENGTH = 2;
 const GAP = 8;
 
+// 마지막 답 아래 버튼도 같은 문구로 묻는다.
+export const QUOTE_ASKS = {
+  easier: "이 부분을 쉽게 설명해줘",
+  example: "이 부분을 예시로 보여줘",
+} as const;
+export type QuoteAsk = keyof typeof QUOTE_ASKS;
+
 export const DRAG_MENU_ASKS = [
-  { id: "easier", label: "쉽게 설명", content: "이 부분을 쉽게 설명해줘" },
-  { id: "example", label: "예시 보기", content: "이 부분을 예시로 보여줘" },
+  { id: "easier", label: "쉽게 설명", content: QUOTE_ASKS.easier },
+  { id: "example", label: "예시 보기", content: QUOTE_ASKS.example },
 ] as const;
 
 // conceptId가 비어 있으면 인트로나 번호 없는 절처럼 개념이 아닌 절이다.
@@ -20,7 +27,12 @@ export function selectionQuestion(
 ): SelectionQuestion | undefined {
   const text = selected.trim();
   if (!section || text.length < SELECTED_TEXT_MIN_LENGTH) return undefined;
-  return { text: text.slice(0, SELECTED_TEXT_MAX_LENGTH), conceptId: section.conceptId };
+  return { text: clipQuote(text), conceptId: section.conceptId };
+}
+
+// 서버가 받는 길이까지 자른다. 이모지 같은 글자가 반만 남으면 AI 요청이 거절되므로 반쪽은 버린다.
+export function clipQuote(text: string) {
+  return text.slice(0, SELECTED_TEXT_MAX_LENGTH).replace(/[\uD800-\uDBFF]$/, "");
 }
 
 type Box = { left: number; right: number; top: number; bottom: number };
