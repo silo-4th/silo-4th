@@ -2,13 +2,14 @@ import * as amplitude from "@amplitude/analytics-browser";
 import { type AnalyticsEvent, type AnalyticsEvents, type UserProps, commonProps } from "@/lib/analytics";
 import { env } from "@/lib/env";
 
-// 브라우저에서만 부른다. 키가 없는 로컬과 테스트에서는 아무것도 보내지 않는다.
+// 브라우저에서만 부른다. 운영 배포에서만 보낸다.
+// 로컬 개발 서버와 E2E도 `.env.local`의 키를 읽으므로, 키가 있는지만 보면 테스트 학습자가 운영 데이터에 섞인다.
 let enabled: boolean | undefined;
 
 function ready(): boolean {
   if (enabled !== undefined) return enabled;
   if (typeof window === "undefined") return false;
-  const apiKey = env.NEXT_PUBLIC_AMPLITUDE_API_KEY;
+  const apiKey = env.NEXT_PUBLIC_VERCEL_ENV === "production" ? env.NEXT_PUBLIC_AMPLITUDE_API_KEY : undefined;
   enabled = Boolean(apiKey);
   if (!apiKey) return false;
   const appVersion = env.NEXT_PUBLIC_APP_VERSION;
