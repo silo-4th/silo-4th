@@ -36,6 +36,11 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check.mjs\"",
             "timeout": 180
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/design-qa-gate.mjs\"",
+            "timeout": 30
           }
         ]
       }
