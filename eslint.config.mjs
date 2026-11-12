@@ -31,6 +31,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 에이전트가 만든 저장소 사본이다. 각 사본은 자기 작업 폴더에서 따로 검사한다.
+    ".claude/worktrees/**",
   ]),
 ]);
 

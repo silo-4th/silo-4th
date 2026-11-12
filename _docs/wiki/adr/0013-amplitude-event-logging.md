@@ -28,7 +28,7 @@
 - `landing_view`의 `referrer`는 전체 주소 대신 사이트 이름만 보낸다. 주소의 검색어에 개인정보가 섞일 수 있다.
 - 모든 이벤트에 `app_version`과 `study_day`를 붙인다. 브라우저는 enrichment 플러그인이 붙이고, 서버는 보낼 때 붙인다.
 - 로그인한 화면은 `IdentifyLearner`로 학습자 ID와 사용자 속성을 넣는다. 로그아웃하면 `reset`으로 학습자와 기기 ID를 새로 시작한다. 한 브라우저를 다른 학습자가 이어 쓸 수 있기 때문이다.
-- 키는 `NEXT_PUBLIC_AMPLITUDE_API_KEY`로 읽는다. 브라우저에 실리는 프로젝트 식별값이라 비밀값으로 다루지 않는다. 키가 비어 있으면 아무것도 보내지 않는다.
+- 키는 `NEXT_PUBLIC_AMPLITUDE_API_KEY`로 읽는다. 브라우저에 실리는 프로젝트 식별값이라 비밀값으로 다루지 않는다. Vercel 운영 배포에서만 보내고, 키가 비어 있어도 보내지 않는다. 로컬 개발 서버와 E2E도 `.env.local`의 키를 읽어서, 키가 있는지만 보면 테스트 학습자가 운영 데이터에 섞이기 때문이다. 브라우저는 `NEXT_PUBLIC_VERCEL_ENV`, 서버는 `VERCEL_ENV`가 `production`인지 본다.
 
 서버에서만 알 수 있는 순간의 이벤트는 `lib/amplitude-server.ts`의 `trackFromServer`로 앰플리튜드 HTTP API에 보낸다. 지금은 `start_submit` 하나다. 시작 화면 저장은 학습 화면으로 보내는 redirect로 끝나서 브라우저가 저장된 순간을 알 수 없고, 이 redirect는 노션 TC-25가 확인하는 동작이다. 서버 이벤트는 `after()`로 응답 뒤에 보내 응답을 늦추지 않고, 실패해도 학습 흐름에 영향을 주지 않는다. 기기 ID 없이 학습자 ID로만 보내며, 브라우저가 로그인 때 같은 학습자 ID를 넣어 두어 이어진다.
 
