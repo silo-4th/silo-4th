@@ -41,6 +41,8 @@
 | 푸시한 마이그레이션은 다시 생성하거나 고치지 않고 새 마이그레이션으로 더한다. 다른 브랜치와 충돌하면 `_journal.json`을 손으로 합치지 않고 내 마이그레이션을 지운 뒤 `npm run db:generate`로 다시 만든다. 마이그레이션은 이전 코드가 새 스키마에서도 돌아가게 만든다 | 코드 리뷰 (기계 검사 없음) | [0009](adr/0009-migrate-on-deploy.md) |
 | 기본 문제의 원본은 `lib/default-quiz-problems.ts` 하나다. 바꿀 때는 이 모듈을 고치고 `npm run quiz:defaults:migration`으로 새 마이그레이션을 만든다. 마이그레이션은 내용 해시를 ID로 써서 같은 문제를 한 벌만 넣고, 모듈에서 빠진 기본 문제는 지우지 않고 `retired_at`으로 내린다 | `lib/default-quiz-problems-sql.ts`, 노션 TC-146, TC-147, TC-149 | [0011](adr/0011-default-quiz-problems.md) |
 | 기본 문제를 고르는 통합 테스트는 단원에 테스트가 넣은 문제만 있다고 가정하지 않고, 마이그레이션이 넣은 기본 문제를 DB에서 읽어 단언한다 | `app/api/quiz-problems/route.integration.test.ts`, 노션 TC-116, TC-136, TC-138 | [0011](adr/0011-default-quiz-problems.md) |
+| 앰플리튜드는 `lib/amplitude.ts`에서만 초기화하고 이벤트를 보낸다. 자동 수집과 원격 설정을 끈다. 서버 이벤트는 `lib/amplitude-server.ts`의 `trackFromServer`로만 보낸다 | `lib/amplitude.ts`, `lib/amplitude-server.ts`, 코드 리뷰 | [0013](adr/0013-amplitude-event-logging.md) |
+| 이벤트 이름과 속성은 `lib/analytics.ts`의 `AnalyticsEvents` 타입에 먼저 정의한다. 속성에는 ID, 개수, 정해진 값만 두고 질문 원문, 답, 이메일, 이름을 넣지 않는다. DB에 남는 값은 이벤트로 보내지 않는다 | `lib/analytics.ts` 타입 검사, 코드 리뷰 | [0013](adr/0013-amplitude-event-logging.md) |
 
 ## 설계 결정
 
@@ -58,6 +60,7 @@
 | [0010](adr/0010-quiz-free-grading.md) | 서술형 퀴즈 채점은 Haiku 5.5로 서버에서 하고, 실패하면 채점 없이 저장한다 | 확정 |
 | [0011](adr/0011-default-quiz-problems.md) | 기본 문제는 TS 모듈에서 만든 마이그레이션으로 넣고, 바꿀 때마다 새 마이그레이션으로 교체한다 | 확정 |
 | [0012](adr/0012-single-concept-classification.md) | 질문 하나에는 개념 하나만 연결하고, 분류 프롬프트에 개념별 한 줄 정리를 붙인다 | 확정 |
+| [0013](adr/0013-amplitude-event-logging.md) | 이벤트 로그는 앰플리튜드 브라우저 SDK로 보내고, 자동 수집을 끄고 학습자가 쓴 글은 보내지 않는다 | 확정 |
 
 ## 아직 도입하지 않은 규칙
 

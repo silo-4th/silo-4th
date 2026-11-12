@@ -87,3 +87,4 @@
 | 2026-11-09 | `output/2026-11-09-quiz-prompt-inputs.md`에 개념 전달 방식을 더했다 | 개념은 `target_section`의 `concepts.id`와 `concepts.title`로만 들어가고, 진입점마다 질문 개념과 출제 절이 같은지 다른지를 표로 적었다 | 없다 |
 | 2026-11-09 | `wiki/question-concepts-summary.md`에 4-102 반영 내용을 더했다 | 답변 지시문을 `v6-principles`로, 요약 지시문을 `r2b-nofab-kw0-folded`로 바꾼 것과 과거 요약 줄 앞에 한국 시간 날짜를 붙이는 형식을 적었다. 지시문 전문은 코드와 Linear 링크로 대신했다 | 없다 |
 | 2026-11-10 | 4-135 CodeRabbit 리뷰에 따라 통합 테스트 대상 문구를 고쳤다 | ADR 0006의 제목과 테스트 유형 표, 이유 문단 첫 줄, `wiki/dev-rules.md`의 ADR 목록, 루트 `CLAUDE.md`의 테스트 규칙, `implement-ticket` 스킬의 케이스 작성 기준에서 통합 테스트 대상을 "DB를 변경하거나 학습자별로 조회를 제한하는 서버 코드"로 넓혔다. 이유 문단이 이미 학습자 간 조회 차단을 근거로 들고 있어 대상 문구를 이유에 맞췄다 | 없다 |
+| 2026-11-12 | 4-155에서 앰플리튜드 연동 방식을 ADR로 남겼다 | `wiki/adr/0013-amplitude-event-logging.md`를 만들고 `wiki/dev-rules.md`의 적용된 규칙에 두 줄, 설계 결정에 0013을 더했다. 자동 수집과 원격 설정을 끄는 것, 이벤트 속성에 학습자가 쓴 글을 넣지 않는 것, 서버 이벤트는 `trackFromServer`로만 보내는 것을 규칙으로 정했다 | 첫 화면 스크립트가 압축해서 약 68KB 늘어 성능 측정 뒤 SDK를 나중에 받도록 바꿀지 정해야 한다 |
