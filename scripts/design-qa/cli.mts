@@ -4,7 +4,10 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
+import { parseEnv } from "node:util";
 import { type Browser, type Page, chromium } from "@playwright/test";
+import { judge, readState } from "../../.claude/hooks/design-qa-judge.mjs";
+import { env } from "../../lib/env";
 
 const DESIGN_URL = "https://sprout-ten-iota.vercel.app";
 const DESIGN_REPO = "https://github.com/silo-4th/silo-4th-design.git";
@@ -30,6 +33,16 @@ function testEnvFile() {
   const found = candidates.find((file) => existsSync(file));
   if (!found) throw new Error(`.env.test.local이 없다. README의 통합 테스트와 E2E 항목을 보고 만든다. 찾은 곳: ${candidates.join(", ")}`);
   return found;
+}
+
+// process.loadEnvFile은 셸에 이미 있는 값을 덮지 않아서, 셸의 운영 DB 주소가 그대로 남을 수 있다.
+function loadTestEnvFile(file: string) {
+  process.loadEnvFile(file);
+  const expected = parseEnv(readFileSync(file, "utf8")).DATABASE_URL;
+  if (!expected) throw new Error(`${file}에 DATABASE_URL이 없다.`);
+  if (env.DATABASE_URL !== expected) {
+    throw new Error("셸에 DATABASE_URL이 따로 있어 test DB를 쓸 수 없다. 셸에서 DATABASE_URL을 지우고 다시 실행한다.");
+  }
 }
 
 function readJson<T>(file: string): T | undefined {
@@ -63,18 +76,27 @@ function sync() {
 
 // ---------- start, end: QA 세션 ----------
 
-type Session = { scope: string; maxRounds: number; baseCommit: string; startedAt: string; status: "open" | "done"; gateBlocks: number };
+type Session = {
+  scope: string;
+  maxRounds: number;
+  baseCommit: string;
+  startedAt: string;
+  status: "open" | "done" | "aborted";
+  gateBlocks: number;
+};
 
 function start(args: string[]) {
   const scope = option(args, "scope");
   if (!scope) throw new Error('--scope "QA할 화면과 항목"을 넣는다.');
+  const max = args.includes("--max") ? option(args, "max") : "10";
+  if (!max || !/^[1-9]\d*$/.test(max)) throw new Error("--max는 1 이상의 정수다.");
   const existing = readJson<Session>(SESSION_FILE);
-  if (existing?.status === "open") throw new Error("열린 QA 세션이 있다. 이어서 진행하거나 `end`로 닫는다.");
+  if (existing?.status === "open") throw new Error("열린 QA 세션이 있다. 이어서 진행하거나 `end`, `end --abort`로 닫는다.");
   rmSync(path.join(STATE_DIR, "rounds"), { recursive: true, force: true });
   rmSync(path.join(STATE_DIR, "waivers.md"), { force: true });
   const session: Session = {
     scope,
-    maxRounds: Number(option(args, "max") ?? 10),
+    maxRounds: Number(max),
     baseCommit: git("rev-parse", "HEAD"),
     startedAt: new Date().toISOString(),
     status: "open",
@@ -85,11 +107,23 @@ function start(args: string[]) {
   console.log(`QA 세션을 열었다. 라운드 결과는 .design-qa/rounds/NN.json에 쌓인다.\n${JSON.stringify(session, null, 2)}`);
 }
 
-async function end() {
+async function end(args: string[]) {
   const session = readJson<Session>(SESSION_FILE);
-  if (session) writeJson(SESSION_FILE, { ...session, status: "done" });
+  if (session?.status !== "open") throw new Error("열린 QA 세션이 없다.");
+  const abort = args.includes("--abort");
+  if (!abort) {
+    const verdict = judge(readState(ROOT));
+    if (!verdict.ok || verdict.capped) {
+      throw new Error(
+        `아직 끝낼 수 없다. ${verdict.reason}\n세션은 열어 둔다. 여기서 그만두려면 \`npm run design-qa -- end --abort\`를 실행한다.`,
+      );
+    }
+  }
+  // 학습자 정리가 실패하면 세션을 열어 둬서 다시 end로 지울 수 있게 한다.
   await cleanup();
-  console.log("QA 세션을 닫았다. 개발 서버는 띄운 터미널이나 백그라운드 작업을 멈춰 끈다.");
+  writeJson(SESSION_FILE, { ...session, status: abort ? "aborted" : "done" });
+  const closed = abort ? "QA 세션을 중단하고 닫았다. 남은 지적은 반영하지 않았다." : "QA 세션을 닫았다.";
+  console.log(`${closed} 개발 서버는 띄운 터미널이나 백그라운드 작업을 멈춰 끈다.`);
 }
 
 // ---------- serve: test DB로 개발 서버를 띄운다 ----------
@@ -98,13 +132,13 @@ function freePort(from: number): Promise<number> {
   return new Promise((resolve) => {
     const server = createServer();
     server.once("error", () => resolve(freePort(from + 1)));
-    server.listen(from, () => server.close(() => resolve(from)));
+    server.listen(from, "127.0.0.1", () => server.close(() => resolve(from)));
   });
 }
 
 async function serve() {
   const port = await freePort(3200);
-  const url = `http://localhost:${port}`;
+  const url = `http://127.0.0.1:${port}`;
   // 로그인 세션 쿠키가 이 주소에서 통하도록 AUTH_URL만 바꾸고 나머지는 test 브랜치 값을 그대로 쓴다.
   const source = readFileSync(testEnvFile(), "utf8")
     .split(/\r?\n/)
@@ -112,12 +146,12 @@ async function serve() {
   const envFile = path.join(STATE_DIR, "dev.env");
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(envFile, [...source, `AUTH_URL=${url}`, ""].join("\n"));
+  // Next.js는 실행 옵션을 하위 프로세스의 NODE_OPTIONS로 넘기는데 --env-file은 거기서 거부되므로, 여기서 읽어 물려준다.
+  loadTestEnvFile(envFile);
   writeJson(SERVER_FILE, { url, port });
   console.log(`개발 서버: ${url} (test DB)`);
-  // Next.js는 실행 옵션을 하위 프로세스의 NODE_OPTIONS로 넘기는데 --env-file은 거기서 거부되므로, 여기서 읽어 물려준다.
-  process.loadEnvFile(envFile);
   const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
-  const child = spawn(process.execPath, [nextBin, "dev", "--port", String(port)], {
+  const child = spawn(process.execPath, [nextBin, "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: ROOT,
     stdio: "inherit",
   });
@@ -181,7 +215,7 @@ type Learners = { default?: string; created: string[] };
 
 // e2e/fixtures는 불러오는 순간 DB에 연결하므로, 부르기 전에 loadTestEnv를 먼저 한다.
 function loadTestEnv() {
-  process.loadEnvFile(testEnvFile());
+  loadTestEnvFile(testEnvFile());
 }
 
 async function learnerFor(args: string[]) {
