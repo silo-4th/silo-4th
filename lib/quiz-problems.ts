@@ -1,5 +1,6 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
+import { CodedError } from "@/lib/errors/codes";
 import {
   and,
   asc,
@@ -60,7 +61,7 @@ type Concept = { id: string; title: string };
 const SUMMARY_LIMIT = 5;
 
 export function reportQuizProblemError(error: unknown) {
-  captureException(new Error(safeMessage(error, "quiz-problems")));
+  captureException(new CodedError("QUIZ_PROBLEM_FAILED", safeMessage(error, "quiz-problems")));
 }
 
 // 요청 본문은 화면을 거치지 않고도 보낼 수 있어 아무 값이나 올 수 있다.

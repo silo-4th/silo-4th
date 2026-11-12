@@ -1,5 +1,6 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
+import { CodedError } from "@/lib/errors/codes";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
@@ -50,7 +51,7 @@ export type Submission =
 
 // 학습자의 답은 쿼리 값으로 오류 메시지에 담긴다. 값을 지운 메시지만 Sentry로 보낸다.
 export function reportQuizError(error: unknown) {
-  captureException(new Error(safeMessage(error, "quiz-attempts")));
+  captureException(new CodedError("QUIZ_ATTEMPT_FAILED", safeMessage(error, "quiz-attempts")));
 }
 
 function isConfidence(value: unknown): value is Confidence {

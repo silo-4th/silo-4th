@@ -2,7 +2,7 @@
 
 ## 한 문장 요약
 
-Google Apps Script가 5분마다 Sentry API로 새 이슈를 조회해, 허용한 필드만 Slack Incoming Webhook으로 보내 PO에게 오류를 알린다.
+Google Apps Script가 5분마다 Sentry API로 운영 환경의 새 오류 이슈와 예상된 오류의 급증을 조회해, 오류 코드의 한국어 요약과 허용한 필드만 Slack Incoming Webhook으로 보내 PO에게 오류를 알린다.
 
 ## 근거
 
@@ -10,7 +10,8 @@ Google Apps Script가 5분마다 Sentry API로 새 이슈를 조회해, 허용�
 - 확인 날짜: 2026-10-30
 - 자료 성격: 설계 문서
 - 상태: 확정 (개발자가 정했고, 2026-10-30에 ADR 0005에 반영했다)
-- 관련 문서: [ADR 0005 오류 모니터링](../adr/0005-sentry-error-monitoring.md), [개발 규칙](../dev-rules.md), [기술 스택](../tech-stack.md)
+- 관련 문서: [ADR 0005 오류 모니터링](../adr/0005-sentry-error-monitoring.md), [개발 규칙](../dev-rules.md), [기술 스택](../tech-stack.md), [Sentry 오류 수집 현황](../../raw/2026-11-12-sentry-error-capture-status.md)
+- 수정: 2026-11-12, [4-62](https://linear.app/silo0/issue/4-62)에서 운영 오류만 건별로 알리고, 예상된 오류는 급증할 때만 알리고, 메시지를 오류 코드의 한국어 요약 중심으로 바꿨다
 
 ## 목표와 문제
 
@@ -48,7 +49,12 @@ Slack 봇 토큰(`chat.postMessage`) 대신 Incoming Webhook을 쓴다. 메시�
 [Next.js 앱] --오류--> [Sentry 4th-silo]
                             ^
                             | GET /api/0/organizations/eb5a968646b3/issues/
-                            |     ?project=4512343569793024&sort=new&query=firstSeen:>{SINCE}
+                            |     ?project=4512343569793024&sort=new
+                            |     &query=environment:production issue.category:error level:error firstSeen:>{SINCE}
+                            | GET /api/0/organizations/eb5a968646b3/issues/{id}/tags/error_code/
+                            | GET /api/0/organizations/eb5a968646b3/events/?dataset=errors
+                            |     &field=error_code&field=count()&statsPeriod=1h
+                            |     &query=environment:production level:warning has:error_code
 [Apps Script, 5분 트리거] --+
         |  새 이슈만 골라 허용한 필드로 메시지를 만든다
         v
@@ -61,16 +67,15 @@ Sentry 응답은 `UrlFetchApp`으로 받은 직후 아래 타입으로 한 번�
 
 ```ts
 type Issue = {
-  id: string;          // 중복 판정 키
-  shortId: string;     // 4TH-SILO-1
-  level: string;       // error, warning
-  errorType: string;   // metadata.type, 예: TypeError
-  culprit: string;     // 발생 위치(함수 또는 라우트)
-  count: string;
+  id: string;          // 중복 판정 키, 오류 코드 태그 조회 키
+  count: number;
+  userCount: number;   // 겪은 학습자 수. 앱이 학습자 ID만 Sentry 사용자로 보낸다
   firstSeen: string;
   permalink: string;
 };
 ```
+
+2026-11-12부터 Sentry 이슈 번호 `shortId`, 레벨, 오류 종류, 발생 위치 `culprit`도 읽지 않는다. 알림 제목과 발생 위치는 이슈의 `error_code` 태그로 오류 코드 카탈로그 `lib/errors/alert-catalog.ts`에서 찾는다. 카탈로그에 없는 코드는 `UNKNOWN`으로 본다.
 
 제목(`title`)과 오류 메시지(`metadata.value`)는 타입에 넣지 않는다. 질문 원문이 오류 메시지에 섞여 들어와도 스크립트가 그 필드를 읽지 않으므로 Slack으로 나가지 않는다. 보낼 필드를 허용 목록으로 정하면, Sentry 응답에 필드가 늘어도 원문이 새지 않는다. 이 방식으로 이슈 4-43의 완료 기준인 "알림에 질문 원문과 이메일이 담기지 않음"을 지킨다.
 
@@ -86,6 +91,7 @@ Apps Script의 Script Properties에 다음 값을 둔다.
 | `SENTRY_PROJECT_ID` | 설정 | `4512343569793024` |
 | `SINCE` | 상태 | 설치 시각. 첫 실행에서 이전 이슈가 한꺼번에 가는 것을 막는다 |
 | `NOTIFIED_IDS` | 상태 | 이미 보낸 이슈 ID 목록(최근 100개)을 담은 JSON 문자열 |
+| `SPIKE_ALERTED_AT` | 상태 | 오류 코드별 마지막 급증 알림 시각을 담은 JSON 문자열. 같은 코드를 1시간 안에 다시 알리지 않는 데 쓴다 |
 
 "마지막으로 본 시각" 하나만 기준으로 삼지 않고, 보낸 이슈 ID 목록을 상태로 둔다. 시각 하나만 쓰면 같은 시각에 생긴 이슈나 Sentry가 늦게 색인한 이슈를 놓칠 수 있다 (추정).
 
@@ -94,24 +100,39 @@ Apps Script의 Script Properties에 다음 값을 둔다.
 1. `LockService`로 잠금을 건다. 이전 실행이 끝나지 않았으면 이번 실행을 끝낸다.
 2. Sentry API를 호출한다. 200이 아니면 예외를 던진다.
 3. 응답을 `Issue[]`로 바꾸고, `NOTIFIED_IDS`에 없는 이슈만 남긴다. 이 단계는 입력만으로 결과가 정해지는 순수 함수로 만든다.
-4. 이슈마다 Slack에 보내고, 전송에 성공할 때마다 그 ID를 `NOTIFIED_IDS`에 저장한다.
+4. 이슈마다 `error_code` 태그를 읽어 메시지를 만들고 Slack에 보낸다. 전송에 성공할 때마다 그 ID를 `NOTIFIED_IDS`에 저장한다.
+5. 최근 1시간 warning 이벤트를 오류 코드별로 센다. 예상된 오류 코드의 횟수가 급증 기준을 넘고, 그 코드의 마지막 급증 알림이 1시간 전보다 오래됐으면 한 번 알리고 `SPIKE_ALERTED_AT`에 시각을 저장한다.
 
 전송과 저장 사이에 스크립트가 멈추면 다음 실행에서 같은 알림을 한 번 더 보낸다. 알림을 놓치는 것보다 중복이 낫다고 판단해 이 순서를 골랐다. 몇 번을 다시 실행해도 "새 이슈를 모두 한 번 이상 보냈다"는 같은 상태에 도달한다.
 
 ### Slack 메시지 예시
 
-메시지는 Slack Block Kit으로 보낸다. 제목 줄에 레벨과 이슈 ID를 두고, 그 아래에 항목 네 개를 2열로 놓고, Sentry 링크는 버튼으로 둔다. 알림 미리보기에는 `🚨 오류: TypeError (4TH-SILO-3)` 같은 한 줄이 보인다.
+메시지는 Slack Block Kit으로 보낸다. 2026-11-12에 개발자가 아래 형식을 정했다. 제목은 오류 코드의 한국어 요약이고, 항목은 한 줄에 하나씩 둔다. Sentry 이슈 번호는 PO에게 정보를 주지 않아 뺐다.
+
+운영 오류 알림
 
 ```
-🚨 오류 · 4TH-SILO-3
-오류 종류            발생 위치
-`TypeError`          `POST /api/questions`
-처음 발생            발생 횟수
-10월 30일 16:02      1회
+🚨 [오류] 학습 기록을 저장하지 못했어요
+에러코드 `RECORD_SAVE_FAILED`
+발생 위치      학습셋
+겪은 학습자    3명
+발생 횟수      58회
+최초 발생      11월 6일 00:11
 [Sentry에서 보기]
+RECORD_SAVE_FAILED
 ```
 
-2026-10-30 첫 시험에서는 네 줄짜리 일반 텍스트로 보냈는데, 개발자가 읽기 어렵다고 해서 이 형식으로 바꿨다.
+예상된 오류의 급증 알림
+
+```
+⚠️ [급증] 로그인 취소가 1시간에 20회를 넘었어요
+에러코드 `LOGIN_CANCELLED`
+발생 위치              로그인
+최근 1시간 발생 횟수    21회
+LOGIN_CANCELLED
+```
+
+발생 위치는 오류가 난 기능이고, PO가 알림만 보고 어느 화면인지 알 수 있는 이름을 쓴다. 예를 들어 단원 학습 화면은 `학습셋`, AI 질문 답변은 `AI 에이전트`다. 2026-10-30 첫 시험에서는 네 줄짜리 일반 텍스트로 보냈고, 같은 날 레벨과 이슈 ID를 제목에 둔 2열 형식으로 바꿨다가 2026-11-12에 지금 형식으로 바꿨다.
 
 Sentry 링크는 개발자만 열 수 있다. PO는 메시지로 오류가 났다는 사실만 알고, 자세한 내용은 개발자에게 확인한다. ADR 0005의 "결과" 절과 같은 전제다.
 
@@ -124,9 +145,10 @@ Sentry 링크는 개발자만 열 수 있다. PO는 메시지로 오류가 났�
 
 ## 코드 위치와 배포
 
-- `tools/sentry-slack-alert/Code.gs` 파일 하나를 저장소에 둔다. 리뷰와 이력 관리를 위해서다. 배포는 Apps Script 편집기에 붙여 넣어서 하고, clasp는 쓰지 않는다.
-- `.gs` 확장자는 ESLint와 `tsc` 대상이 아니라 `npm run check`에 영향을 주지 않는다.
-- 편집기에서 `setup`을 한 번 실행하면 `SINCE`와 `NOTIFIED_IDS`를 채우고 5분 트리거를 만든 뒤 Sentry 조회를 한 번 시험한다. 다시 실행해도 트리거가 늘지 않는다.
+- 알림 로직은 `tools/sentry-slack-alert/alert.ts`의 순수 함수와 Apps Script API를 부르는 `main.ts`로 나눈다. `alert.test.ts`가 조회 조건, 메시지 변환, 원문 미포함, 급증 판정을 확인한다.
+- `npm run alert:build`가 두 파일과 오류 코드 카탈로그를 esbuild로 묶어 `tools/sentry-slack-alert/Code.gs`를 만든다. 생성 파일이지만 리뷰와 이력 관리를 위해 저장소에 둔다. 배포는 Apps Script 편집기에 붙여 넣어서 하고, clasp는 쓰지 않는다.
+- `.gs` 확장자는 ESLint와 `tsc` 대상이 아니라 `npm run check`에 영향을 주지 않는다. TS 원본은 검사 대상이다.
+- 편집기에서 `setup`을 한 번 실행하면 `SINCE`, `NOTIFIED_IDS`, `SPIKE_ALERTED_AT`을 채우고 5분 트리거를 만든 뒤 Sentry 조회를 한 번 시험한다. 다시 실행해도 트리거가 늘지 않는다.
 - 비밀값은 Script Properties에만 둔다. `lib/env.ts` 규칙은 Next.js 앱 코드에만 적용한다.
 
 ## 작업 순서
@@ -140,6 +162,9 @@ Sentry 링크는 개발자만 열 수 있다. PO는 메시지로 오류가 났�
 
 ## 확인 필요
 
+- 2026-11-12에 Sentry MCP로 이슈 조회 조건과 이벤트 집계 조회가 동작하는 것을 확인했다. Apps Script의 `event:read` 개인 토큰으로 이벤트 집계와 이슈 태그 엔드포인트를 부를 수 있는지는 배포할 때 `setup`으로 확인해야 한다.
+- 브라우저의 환경 구분은 Vercel이 넣어 주는 `NEXT_PUBLIC_VERCEL_ENV`에 기댄다. preview 배포에서 브라우저 오류가 `environment:preview`로 기록되는지 확인해야 한다.
+- resolve한 운영 오류가 다시 나는 경우를 알릴지는 아직 정하지 않았다.
 - Sentry가 무료 요금제의 API 접근을 나중에 막을 수 있다. 가격표에 `API: No`로 적혀 있기 때문이다.
 - 시험 오류는 앱이 아니라 앱과 같은 DSN을 쓰는 `@sentry/node` 스크립트로 보냈다. 배포한 앱에서 난 오류도 같은 경로로 오는지는 아직 보지 않았다.
 - Slack 채널은 비공개 채널 `#프로젝트-4차-오류-알림`이다. 2026-11-02에 개발자가 PO를 초대해 멤버가 2명이 됐다. 시험 알림 두 건은 PO가 들어오기 전에 왔지만 채널 기록에 남아 PO도 볼 수 있다. PO가 들어온 뒤 새로 생긴 이슈의 알림은 아직 없다.

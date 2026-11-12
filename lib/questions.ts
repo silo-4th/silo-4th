@@ -1,5 +1,6 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
+import { CodedError, ERROR_CODE_TAG } from "@/lib/errors/codes";
 import {
   and,
   arrayOverlaps,
@@ -50,7 +51,7 @@ export type Claim =
 
 // DB 오류 메시지는 쿼리 값으로 질문 원문과 AI 답을 담는다. 값을 지운 메시지만 Sentry로 보낸다.
 export function reportQuestionError(error: unknown) {
-  captureException(new Error(safeMessage(error, "questions")));
+  captureException(new CodedError("QUESTION_FAILED", safeMessage(error, "questions")));
 }
 
 // 질문은 그대로 저장하고 AI에게도 넘기므로, 화면을 거치지 않고 아주 긴 글을 보내지 못하게 막는다.
@@ -235,7 +236,7 @@ export async function answerQuestion(
       );
     } catch (error) {
       // Anthropic SDK 오류는 보낸 질문을 담지 않는다.
-      captureException(error);
+      captureException(error, { tags: { [ERROR_CODE_TAG]: "QUESTION_FAILED" } });
       await markError(questionId);
       return { status: "error" };
     }
