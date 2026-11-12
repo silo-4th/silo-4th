@@ -14,6 +14,8 @@ import cookieWantFrown from "@/app/_assets/mascot-cookie-want-frown.webp";
 import cookieWant from "@/app/_assets/mascot-cookie-want.webp";
 import think from "@/app/_assets/mascot-o.png";
 import { ResultChipLabel } from "@/app/_components/result-chip";
+import { recallIntroProps, recallResultProps } from "@/lib/analytics";
+import { track } from "@/lib/amplitude";
 import { type Solved, sendAttempt, shownStem } from "@/lib/quiz-card";
 import {
   RECALL_PREP_STEPS,
@@ -181,6 +183,7 @@ function RecallScreen({ set, onClose, onLeave }: { set: RecallSetView } & Exits)
   }
 
   function postpone() {
+    track("recall_later_click", { set_id: set.id });
     recordRecallEvent(set.id, "postpone");
     onClose();
   }
@@ -198,7 +201,16 @@ function RecallScreen({ set, onClose, onLeave }: { set: RecallSetView } & Exits)
             inert={handoff}
             className="recall-col focus:outline-none"
           >
-            {flow.stage === "entry" && <Entry set={set} onStart={() => send({ type: "start" })} onLater={postpone} />}
+            {flow.stage === "entry" && (
+              <Entry
+                set={set}
+                onStart={() => {
+                  track("recall_start_click", { set_id: set.id });
+                  send({ type: "start" });
+                }}
+                onLater={postpone}
+              />
+            )}
             {flow.stage === "problem" && <Problem flow={flow} busy={saving} onMove={moveOn} onSkip={skip} onFinish={finish} />}
             {flow.stage === "result" && <Result flow={flow} onClose={onClose} onLeave={onLeave} />}
           </section>
@@ -321,6 +333,9 @@ function IntroActions({ onStart, onLater }: { onStart?: () => void; onLater?: ()
 
 function Entry({ set, onStart, onLater }: { set: RecallSetView; onStart: () => void; onLater: () => void }) {
   // 시안처럼 질문 없이 넘어간 개념을 먼저 보여 준다.
+  useEffect(() => {
+    track("recall_intro_view", { set_id: set.id, ...recallIntroProps(set.items) });
+  }, [set]);
   const rows = [...entryOf(set.items).rows].sort((a, b) => Number(a.reason === "물어봄") - Number(b.reason === "물어봄"));
   return (
     <>
@@ -353,6 +368,12 @@ function Problem({
   onFinish: (flow: ProblemFlow, current?: RecallAnswer) => Promise<void>;
 }) {
   const item = flow.set.items[flow.index];
+  const setId = flow.set.id;
+  const position = flow.index + 1;
+  useEffect(() => {
+    if (!item) return;
+    track("recall_question_view", { set_id: setId, item_id: item.id, position, format: item.problem.format, reason: item.reason });
+  }, [setId, item, position]);
   if (!item) return null;
   const answerOf = (solved: Solved): RecallAnswer => ({ itemId: item.id, kind: "answered", ...solved });
   return (
@@ -362,7 +383,10 @@ function Problem({
       last={isLastProblem(flow)}
       busy={busy}
       onSolved={(solved) => onMove(flow, answerOf(solved))}
-      onSkip={() => void onSkip(flow, item)}
+      onSkip={() => {
+        track("recall_question_skip_click", { set_id: setId, item_id: item.id, position });
+        void onSkip(flow, item);
+      }}
       onFinish={(current) => void onFinish(flow, current && answerOf(current))}
     />
   );
@@ -387,6 +411,12 @@ function LeaveLink({ href, onLeave, className, children }: { href: string; onLea
 function Result({ flow, onClose, onLeave }: { flow: Extract<RecallFlow, { stage: "result" }> } & Exits) {
   const cards = resultCards(flow.set, flow.answers);
   const { studyFrom } = flow.set;
+  // 결과 단계의 flow는 화면이 떠 있는 동안 바뀌지 않아, 결과가 보일 때 한 번만 보낸다.
+  useEffect(() => {
+    track("recall_result_view", { set_id: flow.set.id, ...recallResultProps(resultCards(flow.set, flow.answers)) });
+  }, [flow]);
+  // 공부하러 가기는 결과 화면에서 빠져 있어 누른 수가 늘 0이다. 버튼을 다시 두면 recall_study_click과 함께 센다.
+  const finished = () => track("recall_finish_click", { set_id: flow.set.id, study_click_count: 0 });
   const start = "btn btn-dark btn-lg btn-block";
   return (
     <>
@@ -409,11 +439,25 @@ function Result({ flow, onClose, onLeave }: { flow: Extract<RecallFlow, { stage:
       </ol>
       <div className="recall-cta">
         {studyFrom ? (
-          <LeaveLink href={studyHref(studyFrom)} onLeave={onLeave} className={start}>
+          <LeaveLink
+            href={studyHref(studyFrom)}
+            onLeave={(href) => {
+              finished();
+              onLeave(href);
+            }}
+            className={start}
+          >
             오늘 공부 시작하기
           </LeaveLink>
         ) : (
-          <button type="button" onClick={onClose} className={start}>
+          <button
+            type="button"
+            onClick={() => {
+              finished();
+              onClose();
+            }}
+            className={start}
+          >
             오늘 공부 시작하기
           </button>
         )}

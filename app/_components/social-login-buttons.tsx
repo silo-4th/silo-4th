@@ -2,6 +2,7 @@
 
 import { LoaderCircle } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { track } from "@/lib/amplitude";
 import { authClient, succeeded } from "@/lib/auth/client";
 import { loginNotice } from "@/lib/auth/login-notice";
 import { enabledProviders, loginButtons, type ProviderId } from "@/lib/auth/providers";
@@ -15,6 +16,7 @@ export function SocialLoginButtons({ error }: { error?: string }) {
   const notice = loginNotice(requestFailed ? "request_failed" : error);
 
   async function signIn(provider: ProviderId) {
+    track("login_click", { provider });
     setPending(true);
     setRequestFailed(false);
     const started = await succeeded(

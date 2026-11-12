@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { captureException } from "@sentry/nextjs";
+import { CodedError } from "@/lib/errors/codes";
 import { and, eq } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
@@ -17,7 +18,7 @@ type PreparedItem = { item: RecallItem; problemId: string; generated?: QuizProbl
 const NO_CONVERSATION: GenerationContext = { kind: "summaries", summaries: [] };
 
 export function reportRecallSetError(error: unknown) {
-  captureException(new Error(safeMessage(error, "recall-sets")));
+  captureException(new CodedError("RECALL_SET_FAILED", safeMessage(error, "recall-sets")));
 }
 
 async function generateFor(item: RecallItem) {

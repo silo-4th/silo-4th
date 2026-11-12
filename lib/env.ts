@@ -37,8 +37,21 @@ export const env = {
   get APP_VERSION() {
     return process.env.VERCEL_GIT_COMMIT_SHA || "local";
   },
+  // 브라우저에서 읽는 값은 Next.js가 빌드할 때 `process.env.NEXT_PUBLIC_*` 글자 그대로를 값으로 바꿔 넣는다.
+  // 앰플리튜드 키는 브라우저에 그대로 실려 나가는 프로젝트 식별값이라 비밀값이 아니다. 비어 있으면 이벤트를 보내지 않는다.
+  get NEXT_PUBLIC_AMPLITUDE_API_KEY() {
+    return process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY;
+  },
+  // 서버의 APP_VERSION과 같은 배포 커밋이다. Vercel이 NEXT_PUBLIC_ 이름으로도 넣어 준다.
+  get NEXT_PUBLIC_APP_VERSION() {
+    return process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "local";
+  },
   // Vercel이 배포 환경마다 production, preview로 넣는다. 로컬에서는 비어 있다.
   get VERCEL_ENV() {
     return process.env.VERCEL_ENV;
+  },
+  // 브라우저용 VERCEL_ENV. Vercel이 Next.js 프로젝트에 자동으로 넣고, 빌드할 때 값이 코드에 박힌다.
+  get NEXT_PUBLIC_VERCEL_ENV() {
+    return process.env.NEXT_PUBLIC_VERCEL_ENV;
   },
 };

@@ -1,4 +1,5 @@
 import "server-only";
+import { setUser } from "@sentry/core";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getSessionCookie } from "better-auth/cookies";
@@ -71,7 +72,11 @@ export async function findLearner(requestHeaders: Headers) {
       headers: requestHeaders,
       query: { disableRefresh: true },
     });
-    return result?.user ?? null;
+    const learner = result?.user ?? null;
+    // Sentry가 겪은 학습자 수를 세도록 요청 범위에 학습자 ID만 남긴다. 이메일과 이름은 beforeSend가 지운다.
+    // @sentry/nextjs가 다시 내보내는 함수와 같다. 학습자 통합 테스트가 @sentry/nextjs를 captureMessage만 있는 목으로 바꿔 core에서 가져온다.
+    if (learner) setUser({ id: learner.id });
+    return learner;
   } catch (error) {
     // 세션 조회 오류는 cause에 세션 토큰이 담긴 DB 오류를 달고 온다. 그대로 던지면 Sentry가 cause까지 보낸다.
     throw new Error(safeMessage(error));
