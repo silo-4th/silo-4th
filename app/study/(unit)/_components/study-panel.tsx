@@ -11,6 +11,8 @@ import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { ResultChipLabel } from "@/app/_components/result-chip";
+import { type GenTrigger, genErrorType, genTrigger } from "@/lib/analytics";
+import { track } from "@/lib/amplitude";
 import type { Solved } from "@/lib/quiz-card";
 import {
   SET_SIZE,
@@ -18,6 +20,7 @@ import {
   type QuizSet,
   type QuizSetEvent,
   type QuizTab,
+  type Fetched,
   type SetResults,
   advanceQuizSet,
   clearSavedProblem,
@@ -40,7 +43,7 @@ import {
 import { BetaNotice } from "./beta-notice";
 import { PastProblems, focusOnMount } from "./past-problems";
 import { QuestionPanel } from "./question-panel";
-import { QuizGuide } from "./quiz-guide";
+import { QuizGuide, quizGuideShown } from "./quiz-guide";
 import { QuizHomeArt } from "./quiz-home-art";
 import { useSelectionAsk } from "./selection-ask";
 
@@ -51,12 +54,52 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+type LoadingTab = Extract<QuizTab, { stage: "loading" }>;
+type Gen = { gen_id: string; trigger: GenTrigger };
+
+// 요청, 성공, 실패 이벤트를 gen_id로 짝짓는다. 뒤에 부른 관련 문제가 자리를 덮어 반영하지 않은 응답은 보내지 않는다.
+// settle은 응답을 반영한 뒤의 탭 상태를 돌려준다.
+function requestProblem(
+  tab: LoadingTab,
+  trigger: GenTrigger,
+  unitId: string,
+  settle: (problem: ProblemResult, servedAt?: string) => QuizTab | undefined,
+) {
+  const gen: Gen = { gen_id: genId(), trigger };
+  const startedAt = performance.now();
+  track("quiz_gen_request", { ...gen, unit_id: unitId, position: tab.number });
+  void fetchProblem(tab).then((got) => {
+    const shown = settle(got.ok ? got.body : undefined, got.ok ? got.servedAt : undefined);
+    if (shown) reportGen(gen, shown, got, Math.round(performance.now() - startedAt));
+  });
+}
+
+// randomUUID는 HTTPS와 localhost에서만 있다. 이벤트 ID 때문에 문제 요청이 막히지 않게 다른 값으로 대신한다.
+function genId(): string {
+  return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function reportGen(gen: Gen, shown: QuizTab, got: Fetched<unknown>, waitMs: number) {
+  if (shown.stage === "problem") {
+    const { id, conceptId, format } = shown.problem;
+    track("quiz_gen_complete", { ...gen, problem_id: id, concept_id: conceptId, format, wait_ms: waitMs });
+  }
+  if (shown.stage === "failed" && !got.ok) track("quiz_gen_fail", { ...gen, error_type: genErrorType(got.failure), wait_ms: waitMs });
+}
+
 // 탭 상태가 바뀔 때만 요청한다. 이벤트와 응답에서 보내므로 화면을 다시 그려도 요청이 늘지 않는다.
 // 문제를 띄운 동안에는 칩이 바뀔 때마다 기억해, 새로고침 뒤에도 결과에 앞서 푼 문제가 나온다.
 // 이어 풀기 응답이 다시 새 문제 요청으로 이어지므로, 응답을 반영할 때도 지금 상태를 ref로 읽어 바로 다음 요청을 보낸다.
-function useQuizSet(learnerId: string) {
+function useQuizSet(learnerId: string, unitId: string) {
   const [set, setSet] = useState<QuizSet>(() => startQuizSet(readSetFinished(learnerId)));
   const current = useRef(set);
+  // 관련 문제 요청에는 단원이 없어, 이벤트에 붙일 단원은 지금 열린 단원으로 읽는다.
+  const openUnit = useRef(unitId);
+  useEffect(() => {
+    openUnit.current = unitId;
+  }, [unitId]);
+  // 다시 시도는 실패한 요청과 같은 까닭으로 세도록 마지막 요청의 까닭을 남긴다.
+  const lastTrigger = useRef<GenTrigger>(undefined);
   // 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
   const shownAt = useRef<string>(undefined);
 
@@ -71,15 +114,22 @@ function useQuizSet(learnerId: string) {
     if (tab === before) return;
     // 결과에서 나오면 새 묶음이다. 새 문제를 받기 전에 새로고침해도 지난 묶음의 마지막 문제로 결과를 다시 띄우지 않는다.
     if (before.stage === "result") clearSavedProblem(learnerId);
-    if (tab.stage === "loading") void fetchProblem(tab).then((served) => settle(tab, served?.body, served?.servedAt));
+    if (tab.stage === "loading") request(before, tab);
     if (tab.stage === "resuming") void fetchResumedProblem(tab).then((problem) => settle(tab, problem, tab.shownAt));
   }
 
-  function settle(requested: QuizTab, problem: ProblemResult, servedAt?: string) {
+  function request(before: QuizTab, tab: LoadingTab) {
+    const trigger = genTrigger(before, tab, lastTrigger.current);
+    lastTrigger.current = trigger;
+    requestProblem(tab, trigger, openUnit.current, (problem, servedAt) => settle(tab, problem, servedAt));
+  }
+
+  function settle(requested: QuizTab, problem: ProblemResult, servedAt?: string): QuizTab | undefined {
     const next = settleQuizSet(current.current, requested, problem);
-    if (next === current.current) return;
+    if (next === current.current) return undefined;
     if (next.tab.stage === "problem") shownAt.current = servedAt;
     commit(next);
+    return next.tab;
   }
 
   // 탭을 연 채로 학습일이 바뀌었거나 다른 탭에서 묶음을 마쳤을 수 있어, 새 묶음을 시작하는 버튼은 누를 때 저장된 학습일로 다시 판단한다.
@@ -100,7 +150,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   const { unitId } = useParams<{ unitId: string }>();
   const [opened, setOpened] = useState(true);
   const [shown, setShown] = useState<TabId>("agent");
-  const [quiz, sendQuiz] = useQuizSet(learnerId);
+  const [quiz, sendQuiz] = useQuizSet(learnerId, unitId);
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
   const peek = useRef<HTMLButtonElement>(null);
   const selectionAsks = useSelectionAsk();
@@ -127,9 +177,13 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   }
 
   function open(id: TabId) {
+    const already = shown === id;
     setShown(id);
     if (id !== "quiz") return;
     const saved = readSavedProblem(learnerId);
+    // 퀴즈 홈에서는 기억해 둔 문제로 이어 풀고, 그 밖에는 떠 있던 문제나 받는 중인 문제가 그대로 보인다.
+    const resumed = quiz.tab.stage === "idle" ? saved !== undefined : quiz.tab.stage !== "result";
+    if (!already) track("quiz_tab_click", { unit_id: unitId, resumed, guide_shown: quizGuideShown() });
     if (saved) sendQuiz({ type: "enter", unitId, saved });
   }
 

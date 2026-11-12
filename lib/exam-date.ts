@@ -18,6 +18,12 @@ export function koreanToday(now: Date) {
   return koreanDate.format(now);
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function daysToExam(examDate: string, now: Date) {
+  return Math.round((Date.parse(examDate) - Date.parse(koreanToday(now))) / DAY_MS);
+}
+
 // `2026-02-30`처럼 달력에 없는 날은 Date가 다음 달로 넘기므로, 되돌린 값이 같은지 본다.
 function isCalendarDate(value: string) {
   if (!DATE_FORMAT.test(value)) return false;

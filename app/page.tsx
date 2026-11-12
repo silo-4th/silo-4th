@@ -1,9 +1,12 @@
 import { Check } from "lucide-react";
+import { cookies } from "next/headers";
 import Image from "next/image";
 import { Suspense } from "react";
 import pluckyLaptop from "@/app/_assets/plucky-laptop.webp";
 import { BrandHeader } from "@/app/_components/brand-header";
+import { LandingView } from "@/app/_components/analytics";
 import { SocialLoginButtons } from "@/app/_components/social-login-buttons";
+import { normalizeSource, SOURCE_COOKIE } from "@/lib/source";
 
 // 로그인한 학습자는 `proxy.ts`가 학습 화면으로 보내므로, 이 화면은 로그인하지 않은 사람만 본다.
 export default function Home({ searchParams }: PageProps<"/">) {
@@ -29,9 +32,16 @@ export default function Home({ searchParams }: PageProps<"/">) {
   );
 }
 
+// 처음 들어온 요청에는 `proxy.ts`가 남길 출처 쿠키가 아직 없어서 주소의 `?from=`을 함께 본다.
 async function Login({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
-  const { error } = await searchParams;
-  return <SocialLoginButtons error={typeof error === "string" ? error : undefined} />;
+  const { error, from } = await searchParams;
+  const source = normalizeSource((await cookies()).get(SOURCE_COOKIE)?.value ?? (typeof from === "string" ? from : undefined));
+  return (
+    <>
+      <LandingView source={source} />
+      <SocialLoginButtons error={typeof error === "string" ? error : undefined} />
+    </>
+  );
 }
 
 function Preview() {

@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { resetLearner } from "@/lib/amplitude";
 import { authClient, succeeded } from "@/lib/auth/client";
 
 export function SignOutButton({ className }: { className?: string }) {
@@ -14,6 +15,7 @@ export function SignOutButton({ className }: { className?: string }) {
     setPending(true);
     setFailed(false);
     if (await succeeded(authClient.signOut())) {
+      resetLearner();
       router.refresh();
       return;
     }

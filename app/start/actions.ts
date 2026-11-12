@@ -2,11 +2,12 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { trackFromServer } from "@/lib/amplitude-server";
 import { getCurrentLearner } from "@/lib/auth";
 import { reportAuthError } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
 import { learner } from "@/lib/db/schema";
-import { type ExamDateError, parseExamDate } from "@/lib/exam-date";
+import { type ExamDateError, daysToExam, parseExamDate } from "@/lib/exam-date";
 import { HOME_PATH, STUDY_PATH } from "@/lib/routes";
 
 export type StartFormState = { notice: string } | null;
@@ -33,16 +34,21 @@ export async function submitStart(_previous: StartFormState, formData: FormData)
   if (!parsed.ok) return { notice: NOTICES[parsed.error] };
   if (!submitted.consented) return { notice: NOTICES.consent };
 
+  let saved = false;
   try {
     // 두 탭에서 거의 동시에 내도 먼저 저장한 값이 남는다.
-    await getDb()
+    const rows = await getDb()
       .update(learner)
       .set({ examDate: parsed.examDate, consentedAt: new Date() })
-      .where(and(eq(learner.id, current.id), isNull(learner.consentedAt)));
+      .where(and(eq(learner.id, current.id), isNull(learner.consentedAt)))
+      .returning({ id: learner.id });
+    saved = rows.length > 0;
   } catch (error) {
     // DB 오류 원본에는 쿼리 값이 담기므로 정리한 메시지만 남긴다.
     reportAuthError(error, "start");
     return { notice: NOTICES.save_failed };
   }
+  // 저장은 학습 화면으로 보내는 redirect로 끝나서 브라우저가 저장된 순간을 알 수 없다.
+  if (saved) trackFromServer(current.id, "start_submit", { days_to_exam: daysToExam(parsed.examDate, new Date()) });
   redirect(STUDY_PATH);
 }
