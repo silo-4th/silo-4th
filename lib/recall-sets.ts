@@ -1,5 +1,6 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
+import { CodedError } from "@/lib/errors/codes";
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
@@ -180,5 +181,5 @@ export async function markSectionOpened(learnerId: string, itemId: string): Prom
 }
 
 export function reportRecallError(error: unknown) {
-  captureException(new Error(safeMessage(error, "recall-sets")));
+  captureException(new CodedError("RECALL_SET_FAILED", safeMessage(error, "recall-sets")));
 }

@@ -1,5 +1,6 @@
 import "server-only";
 import { captureException } from "@sentry/nextjs";
+import { CodedError } from "@/lib/errors/codes";
 import { and, eq, sql } from "drizzle-orm";
 import { safeMessage } from "@/lib/auth/sentry-logger";
 import { getDb } from "@/lib/db";
@@ -62,5 +63,5 @@ export async function addDwell(learnerId: string, { conceptId, studyDay: day, dw
 }
 
 export function reportSectionViewError(error: unknown) {
-  captureException(new Error(safeMessage(error, "section-views")));
+  captureException(new CodedError("RECORD_SAVE_FAILED", safeMessage(error, "section-views")));
 }

@@ -41,4 +41,8 @@ export const env = {
   get VERCEL_ENV() {
     return process.env.VERCEL_ENV;
   },
+  // 브라우저용 VERCEL_ENV. Vercel이 Next.js 프로젝트에 자동으로 넣고, 빌드할 때 값이 코드에 박힌다.
+  get NEXT_PUBLIC_VERCEL_ENV() {
+    return process.env.NEXT_PUBLIC_VERCEL_ENV;
+  },
 };
