@@ -151,6 +151,10 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   const [opened, setOpened] = useState(true);
   const [shown, setShown] = useState<TabId>("agent");
   const [quiz, sendQuiz] = useQuizSet(learnerId, unitId);
+  // 지난 문제를 연 퀴즈 홈이나 결과 상태다. 관련 문제로 그 화면을 떠났다가 돌아오면 새 상태라 지난 문제가 아니라 그 화면을 보여 준다.
+  // 지난 문제가 열려 있으면 첫 진입 안내를 숨기므로, 퀴즈 탭 이벤트도 이 값으로 안내가 보이는지 판단한다.
+  const [pastOf, setPastOf] = useState<QuizTab>();
+  const pastShown = pastOf === quiz.tab;
   const tabs = useRef(new Map<TabId, HTMLButtonElement>());
   const peek = useRef<HTMLButtonElement>(null);
   const selectionAsks = useSelectionAsk();
@@ -183,7 +187,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
     const saved = readSavedProblem(learnerId);
     // 퀴즈 홈에서는 기억해 둔 문제로 이어 풀고, 그 밖에는 떠 있던 문제나 받는 중인 문제가 그대로 보인다.
     const resumed = quiz.tab.stage === "idle" ? saved !== undefined : quiz.tab.stage !== "result";
-    if (!already) track("quiz_tab_click", { unit_id: unitId, resumed, guide_shown: quizGuideShown() });
+    if (!already) track("quiz_tab_click", { unit_id: unitId, resumed, guide_shown: !pastShown && quizGuideShown() });
     if (saved) sendQuiz({ type: "enter", unitId, saved });
   }
 
@@ -255,6 +259,8 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
             set={quiz}
             unitId={unitId}
             active={opened && shown === "quiz"}
+            pastShown={pastShown}
+            onPast={setPastOf}
             guide={
               // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
               <QuizGuide onClose={() => tabs.current.get("quiz")?.focus()} />
@@ -290,6 +296,8 @@ type QuizTabBodyProps = {
   set: QuizSet;
   unitId: string;
   active: boolean;
+  pastShown: boolean;
+  onPast: (tab: QuizTab | undefined) => void;
   guide: ReactNode;
   onStart: () => void;
   onRetry: () => void;
@@ -298,11 +306,8 @@ type QuizTabBodyProps = {
   onLeaveResult: (leave: Leave) => void;
 };
 
-function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, onNext, onLeaveResult }: QuizTabBodyProps) {
+function QuizTabBody({ set, unitId, active, pastShown, onPast, guide, onStart, onRetry, onGraded, onNext, onLeaveResult }: QuizTabBodyProps) {
   const { tab, results } = set;
-  // 지난 문제를 연 퀴즈 홈이나 결과 상태다. 관련 문제로 그 화면을 떠났다가 돌아오면 새 상태라 지난 문제가 아니라 그 화면을 보여 준다.
-  const [pastOf, setPastOf] = useState<QuizTab>();
-  const pastShown = pastOf === tab;
   // 누른 돌아가기 버튼이 사라지므로 연 화면의 지난 문제 보기 버튼으로 포커스를 돌려준다. 돌아온 직후 한 번만 옮겨, 나중에 탭을 다시 열 때는 옮기지 않는다.
   const backPending = useRef(false);
   const [focusBack] = useState(() => (element: HTMLElement | null) => {
@@ -322,12 +327,12 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
         <PastProblems
           onBack={() => {
             backPending.current = true;
-            setPastOf(undefined);
+            onPast(undefined);
           }}
         />
       )}
       {tab.stage === "idle" && active && !pastShown && (
-        <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => setPastOf(tab)} />
+        <QuizHome unitId={unitId} pastRef={focusBack} onStart={onStart} onPast={() => onPast(tab)} />
       )}
       {waiting && <QuizSkeleton />}
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
@@ -351,7 +356,7 @@ function QuizTabBody({ set, unitId, active, guide, onStart, onRetry, onGraded, o
         </>
       )}
       {tab.stage === "result" && !pastShown && (
-        <QuizResult results={results} pastRef={focusBack} onLeave={onLeaveResult} onPast={() => setPastOf(tab)} />
+        <QuizResult results={results} pastRef={focusBack} onLeave={onLeaveResult} onPast={() => onPast(tab)} />
       )}
     </div>
   );
