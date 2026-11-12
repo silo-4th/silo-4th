@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { AccountMenu } from "@/app/_components/account-menu";
+import { IdentifyLearner, StartView } from "@/app/_components/analytics";
 import { BrandHeader } from "@/app/_components/brand-header";
 import { Mascot } from "@/app/_components/mascot";
+import { userProperties } from "@/lib/analytics";
 import { getCurrentLearner } from "@/lib/auth";
 import { koreanToday } from "@/lib/exam-date";
 import { HOME_PATH, STUDY_PATH } from "@/lib/routes";
@@ -41,6 +43,8 @@ async function StartGate() {
   // 이미 동의한 학습자가 제목을 잠깐 보지 않도록, 확인을 마친 뒤에 제목과 폼을 함께 그린다.
   return (
     <>
+      <IdentifyLearner learnerId={learner.id} properties={userProperties(learner)} />
+      <StartView />
       <span className="mt-4 mb-5 flex justify-center [&_.mascot--live]:m-0">
         <Mascot size={88} live />
       </span>

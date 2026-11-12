@@ -26,6 +26,13 @@ function saveDismissed() {
   } catch {}
 }
 
+// 퀴즈 탭 이벤트가 안내가 뜨는지 읽도록 닫은 사실을 화면 밖에도 남긴다.
+let closedThisVisit = false;
+
+export function quizGuideShown(): boolean {
+  return !closedThisVisit && !readDismissed();
+}
+
 // 닫기는 이번 방문에서만, 다시 보지 않기는 이 브라우저에서 계속 숨긴다.
 // 안내는 문제를 가리지 않고 위에 놓여서, 읽는 동안에도 문제를 받는다.
 export function QuizGuide({ onClose }: { onClose: () => void }) {
@@ -34,6 +41,7 @@ export function QuizGuide({ onClose }: { onClose: () => void }) {
   if (dismissed || closed) return null;
 
   function close() {
+    closedThisVisit = true;
     setClosed(true);
     onClose();
   }
