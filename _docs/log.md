@@ -87,3 +87,4 @@
 | 2026-11-09 | `output/2026-11-09-quiz-prompt-inputs.md`에 개념 전달 방식을 더했다 | 개념은 `target_section`의 `concepts.id`와 `concepts.title`로만 들어가고, 진입점마다 질문 개념과 출제 절이 같은지 다른지를 표로 적었다 | 없다 |
 | 2026-11-09 | `wiki/question-concepts-summary.md`에 4-102 반영 내용을 더했다 | 답변 지시문을 `v6-principles`로, 요약 지시문을 `r2b-nofab-kw0-folded`로 바꾼 것과 과거 요약 줄 앞에 한국 시간 날짜를 붙이는 형식을 적었다. 지시문 전문은 코드와 Linear 링크로 대신했다 | 없다 |
 | 2026-11-10 | 4-135 CodeRabbit 리뷰에 따라 통합 테스트 대상 문구를 고쳤다 | ADR 0006의 제목과 테스트 유형 표, 이유 문단 첫 줄, `wiki/dev-rules.md`의 ADR 목록, 루트 `CLAUDE.md`의 테스트 규칙, `implement-ticket` 스킬의 케이스 작성 기준에서 통합 테스트 대상을 "DB를 변경하거나 학습자별로 조회를 제한하는 서버 코드"로 넓혔다. 이유 문단이 이미 학습자 간 조회 차단을 근거로 들고 있어 대상 문구를 이유에 맞췄다 | 없다 |
+| 2026-11-12 | `output/2026-11-12-design-qa-harness-improvement.md`를 만들었다 | 5개 티켓의 세션 기록으로 design-qa가 오래 걸린 이유를 정리하고, 지적의 `check`와 `verify` 명령, 화면 코드만 세는 Stop 훅을 반영한 내용과 남은 3, 4단계 제안을 적었다 | 3, 4단계는 제안이다 |
