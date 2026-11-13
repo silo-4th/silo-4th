@@ -37,6 +37,12 @@
 - 퀴즈 탭 `trigger`에서 `unit_change`를 뺐다. 단원을 바꾸는 것만으로는 문제를 생성하지 않아서, 단원을 바꾼 뒤의 요청도 `next`로 보낸다.
 - `recall_study_click`은 심지 않았다. 결과 화면에 틀린 문제의 관련 개념으로 가는 버튼이 없기 때문이다. 버튼을 추가한 뒤에 심고, 그때까지 `recall_finish_click`의 `study_click_count`는 0으로 보낸다.
 
+P1 이벤트는 [4-156](https://linear.app/silo0/issue/4-156)에서 심었고, 2026-11-13에 개발자가 설계 문서와 다르게 다음을 정했다.
+
+- `quiz_retry_click`과 `unit_locked_click`은 심지 않았다. 퀴즈 탭에 "헷갈린 문제 다시 풀기" 버튼이 없고, 강의 목록에 "자료 준비 중" 단원이 없기 때문이다.
+- `agent_history_item_click`은 `same_unit` 없이 보낸다. 세션 목록 API에 대화의 단원이 없어서다. 단원은 DB `questions.unit_id`로 본다.
+- `agent_followup_click`의 `kind`는 `easier`, `example`만, `reader_select_click`의 `action`은 `easy`, `example`만 보낸다. 화면에 있는 버튼이 이 둘뿐이다. 말투 메뉴와 "관련 문제 풀기"는 화면에 있어 `agent_tone_click`과 `agent_related_quiz_click`을 심었다.
+
 ## 검토한 대안
 
 | 대안 | 장점 | 단점 | 택하지 않은 이유 |
@@ -61,3 +67,5 @@
 - 첫 화면 성능이 문제가 되면 SDK를 화면이 뜬 뒤에 받도록 바꾼다.
 - 결과 화면에 관련 개념으로 가는 버튼이 생기면 `recall_study_click`을 심고 `recall_items.opened_section_at`을 채운다.
 - 단원을 바꾸면 바로 문제를 만드는 흐름이 생기면 `unit_change` 트리거를 다시 넣는다.
+- 퀴즈 탭에 "헷갈린 문제 다시 풀기"나 강의 목록에 준비 중인 단원이 생기면 `quiz_retry_click`, `unit_locked_click`을 심는다.
+- 세션 목록에 대화의 단원이 생기면 `agent_history_item_click`에 `same_unit`을 붙인다.

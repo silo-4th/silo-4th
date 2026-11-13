@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import { track } from "@/lib/amplitude";
 
 // 기기를 바꾸면 한 번 더 보여도 괜찮은 안내라서 학습자 기록 대신 브라우저에 둔다.
 const DISMISSED_KEY = "quiz-guide-dismissed";
@@ -40,7 +41,8 @@ export function QuizGuide({ onClose }: { onClose: () => void }) {
   const [closed, setClosed] = useState(false);
   if (dismissed || closed) return null;
 
-  function close() {
+  function close(dontShowAgain: boolean) {
+    track("quiz_guide_close_click", { dont_show_again: dontShowAgain });
     closedThisVisit = true;
     setClosed(true);
     onClose();
@@ -61,7 +63,7 @@ export function QuizGuide({ onClose }: { onClose: () => void }) {
           type="button"
           onClick={() => {
             saveDismissed();
-            close();
+            close(true);
           }}
           className="h-8 rounded-md px-3 text-[13px] font-semibold text-gray hover:bg-white"
         >
@@ -69,7 +71,7 @@ export function QuizGuide({ onClose }: { onClose: () => void }) {
         </button>
         <button
           type="button"
-          onClick={close}
+          onClick={() => close(false)}
           className="h-8 rounded-md border border-line bg-white px-3 text-[13px] font-semibold hover:bg-bg"
         >
           닫기

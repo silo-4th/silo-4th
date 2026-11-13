@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { track } from "@/lib/amplitude";
 import { SUBJECT_NAME } from "@/lib/subject";
 import { useBeginUnitSwitch } from "./unit-switch";
 
@@ -21,6 +22,7 @@ export function UnitRail({ units, currentId }: { units: Unit[]; currentId: strin
         title="강의 목록"
         aria-expanded={open}
         onClick={() => {
+          track("unit_menu_click", { unit_id: currentId });
           dialogRef.current?.showModal();
           setOpen(true);
         }}
@@ -57,6 +59,7 @@ export function UnitRail({ units, currentId }: { units: Unit[]; currentId: strin
                   href={`/study/${id}`}
                   aria-current={id === currentId ? "page" : undefined}
                   onClick={(event) => {
+                    if (id !== currentId) track("unit_switch_click", { from_unit_id: currentId, to_unit_id: id });
                     // 새 탭으로 여는 클릭은 이 화면을 옮기지 않는다. 지금 단원을 누르면 기다리던 다른 단원 이동이 취소된다.
                     const sameTab = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
                     if (sameTab) beginSwitch(id === currentId ? undefined : { id, title });
