@@ -2,7 +2,9 @@
 
 import { Lightbulb, Sparkles } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
-import { DRAG_MENU_ASKS, placeDragMenu, type SelectionQuestion, selectionQuestion } from "@/lib/drag-menu";
+import { track } from "@/lib/amplitude";
+import { readerAction } from "@/lib/analytics";
+import { DRAG_MENU_ASKS, type QuoteAsk, placeDragMenu, type SelectionQuestion, selectionQuestion } from "@/lib/drag-menu";
 import {
   type DwellClock,
   dwellSeconds,
@@ -239,8 +241,10 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
     menu.style.top = `${top}px`;
   }
 
-  function ask(content: string) {
+  function ask(id: QuoteAsk, content: string) {
     if (!picked) return;
+    const { text, conceptId } = picked.selection;
+    track("reader_select_click", { action: readerAction(id), concept_id: conceptId ?? undefined, text_length: text.length });
     selectionAsks.ask({ selection: picked.selection, content });
     setPicked(undefined);
     getSelection()?.removeAllRanges();
@@ -288,7 +292,7 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
           {DRAG_MENU_ASKS.map(({ id, label, content }) => {
             const Icon = ASK_ICONS[id];
             return (
-              <button key={id} type="button" disabled={!canAsk} onClick={() => ask(content)}>
+              <button key={id} type="button" disabled={!canAsk} onClick={() => ask(id, content)}>
                 <Icon size={13} aria-hidden />
                 {label}
               </button>

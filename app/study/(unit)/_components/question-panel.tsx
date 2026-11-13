@@ -8,6 +8,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
+import { track } from "@/lib/amplitude";
 import { answerAsk } from "@/lib/answer-quote";
 import { askQuestion } from "@/lib/answer-stream";
 import {
@@ -210,6 +211,7 @@ export function QuestionPanel({
   }, [notice]);
 
   function changeTone(next: AnswerTone) {
+    track("agent_tone_click", { from: tone, to: next });
     saveAnswerTone(learnerId, next);
     const { changedTo } = ANSWER_TONES.find(({ id }) => id === next) ?? ANSWER_TONES[0];
     setNotice({ text: `말투를 ${changedTo} 바꿨어요. 다음 답변부터 적용돼요.` });
@@ -290,6 +292,7 @@ export function QuestionPanel({
   // 마지막 답을 인용해 드래그 메뉴와 같은 문구로 묻는다. 답에는 절이 없어 절 개념 없이 보낸다.
   // 누른 버튼은 답을 기다리는 동안 사라지므로 포커스를 질문 입력으로 옮긴다.
   function askAboutAnswer(turn: { sessionId: string; answer: string }, ask: QuoteAsk) {
+    track("agent_followup_click", { kind: ask });
     input.current?.focus();
     const { content, selectedText } = answerAsk(turn, ask);
     startQuestion(turn.sessionId, content, selectedText === undefined ? undefined : { text: selectedText, conceptId: null });
@@ -351,7 +354,11 @@ export function QuestionPanel({
             aria-label="대화 기록"
             title="대화 기록"
             aria-expanded={historyOpened}
-            onClick={() => setHistoryOpened(true)}
+            onClick={() => {
+              // 목록을 받기 전이나 받지 못했을 때는 기록이 없는 것과 구분되도록 개수를 비운다.
+              track("agent_history_click", { session_count: listLoad === "done" ? sessions.length : undefined });
+              setHistoryOpened(true);
+            }}
             className="tool-btn"
           >
             <Menu size={18} />
@@ -375,7 +382,11 @@ export function QuestionPanel({
                     <button
                       key={title}
                       type="button"
-                      onClick={() => (beta ? setBetaOpened(true) : sendQuestion(title))}
+                      onClick={() => {
+                        track("agent_quick_click", { kind: icon });
+                        if (beta) setBetaOpened(true);
+                        else sendQuestion(title);
+                      }}
                       className="quick-card"
                     >
                       <span className="quick-ico">
@@ -531,6 +542,7 @@ export function QuestionPanel({
           openedSession={openedSession}
           onRetry={retryList}
           onOpen={(sessionId) => {
+            if (sessionId !== openedSession) track("agent_history_item_click", {});
             openSession(sessionId);
             closeHistory();
           }}
