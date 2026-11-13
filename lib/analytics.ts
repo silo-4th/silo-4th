@@ -1,12 +1,15 @@
+import type { AnswerTone } from "@/lib/answer-tone";
 import type { ProviderId } from "@/lib/auth/providers";
 import type { QuizFormat } from "@/lib/db/schema";
-import type { QuizTab } from "@/lib/quiz-tab";
+import type { QuoteAsk } from "@/lib/drag-menu";
+import { type QuizTab, type SetResults, setItems } from "@/lib/quiz-tab";
 import type { RecallSetView } from "@/lib/recall-sets";
 import type { ResultChip } from "@/lib/recall-result";
 import { entryOf } from "@/lib/recall-flow";
 import { studyDay } from "@/lib/study-day";
 
-// 이벤트 이름과 속성은 스프린트 1 이벤트 로그 설계 문서의 P0 표를 따른다. 근거: Linear 4-155.
+// 이벤트 이름과 속성은 스프린트 1 이벤트 로그 설계 문서를 따른다. P0 근거는 Linear 4-155, P1 근거는 4-156이다.
+// P1 중 화면에 버튼이 없는 quiz_retry_click, unit_locked_click은 두지 않는다. 버튼을 만들면 그때 더한다.
 // 속성은 ID, 개수, 정해진 값만 둔다. 학습자가 쓴 글이 들어갈 자리를 타입에 두지 않는다.
 type RecallReason = RecallSetView["items"][number]["reason"];
 type SetId = { set_id: string };
@@ -16,6 +19,8 @@ type ItemAt = { item_id: string; position: number };
 export type GenTrigger = "first" | "next" | "related" | "new_set";
 export type GenErrorType = "generation_failed" | "server_error" | "network";
 export type StudyStatus = "wrong" | "unsure";
+export type QuickKind = "summary" | "example" | "check" | "compare";
+export type PanelTab = "agent" | "quiz";
 
 export type AnalyticsEvents = {
   landing_view: { source: string; referrer: string };
@@ -41,6 +46,23 @@ export type AnalyticsEvents = {
     wait_ms: number;
   };
   quiz_gen_fail: { gen_id: string; trigger: GenTrigger; error_type: GenErrorType; wait_ms: number };
+  quiz_guide_close_click: { dont_show_again: boolean };
+  quiz_gen_retry_click: { gen_id: string };
+  quiz_result_view: { correct_count: number; sure_correct_count: number };
+  quiz_new_set_click: Record<string, never>;
+  agent_quick_click: { kind: QuickKind };
+  agent_followup_click: { kind: QuoteAsk };
+  agent_related_quiz_click: { question_id: string; replaced_problem_id: string | undefined };
+  // 드래그한 본문은 보내지 않고 글자 수만 보낸다. 개념이 아닌 절에서 드래그하면 concept_id가 없다.
+  reader_select_click: { action: ReaderAction; concept_id: string | undefined; text_length: number };
+  agent_history_click: { session_count: number | undefined };
+  // 세션 목록에 대화의 단원이 없어 설계 문서의 same_unit은 보내지 않는다. 단원은 DB questions.unit_id로 본다.
+  agent_history_item_click: Record<string, never>;
+  agent_tone_click: { from: AnswerTone; to: AnswerTone };
+  panel_close_click: { tab: PanelTab };
+  panel_open_click: { closed_sec: number };
+  unit_menu_click: { unit_id: string };
+  unit_switch_click: { from_unit_id: string; to_unit_id: string };
 };
 
 export type AnalyticsEvent = keyof AnalyticsEvents;
@@ -68,6 +90,8 @@ export function recallIntroProps(items: RecallSetView["items"]) {
 
 type RecallResultProps = { correct_count: number; review_count: number };
 
+const CORRECT_CHIPS: readonly ResultChip[] = ["맞혔어요", "맞았지만 헷갈렸어요"];
+
 // 공부하러 가기는 틀렸거나 헷갈린 항목에만 보이므로, 그 두 칩만 status를 가진다.
 const STUDY_STATUS: Partial<Record<ResultChip, StudyStatus>> = {
   "틀렸어요": "wrong",
@@ -79,9 +103,31 @@ export function studyStatus(chip: ResultChip): StudyStatus | undefined {
 }
 
 export function recallResultProps(cards: readonly { chip: ResultChip }[]): RecallResultProps {
-  const correct = cards.filter(({ chip }) => chip === "맞혔어요" || chip === "맞았지만 헷갈렸어요").length;
+  const correct = cards.filter(({ chip }) => CORRECT_CHIPS.includes(chip)).length;
   const review = cards.filter(({ chip }) => studyStatus(chip) !== undefined).length;
   return { correct_count: correct, review_count: review };
+}
+
+// 확실해요를 고르고 맞힌 문제만 맞혔어요 칩을 받는다. 관련 문제로 비운 칸은 세지 않는다.
+export function quizResultProps(results: SetResults) {
+  const chips = setItems(results).map(({ chip }) => chip);
+  return {
+    correct_count: chips.filter((chip) => CORRECT_CHIPS.includes(chip)).length,
+    sure_correct_count: chips.filter((chip) => chip === "맞혔어요").length,
+  };
+}
+
+// 관련 문제는 퀴즈 탭에 떠 있던 문제를 밀어낸다. 받는 중이거나 홈, 결과 화면이면 밀려나는 문제가 없다.
+export function replacedProblemId(tab: QuizTab): string | undefined {
+  return tab.stage === "problem" ? tab.problem.id : undefined;
+}
+
+// 드래그 메뉴의 쉽게 설명은 설계 문서에서 easy로 부른다.
+const READER_ACTIONS = { easier: "easy", example: "example" } as const satisfies Record<QuoteAsk, string>;
+export type ReaderAction = (typeof READER_ACTIONS)[QuoteAsk];
+
+export function readerAction(ask: QuoteAsk): ReaderAction {
+  return READER_ACTIONS[ask];
 }
 
 type LoadingTab = Extract<QuizTab, { stage: "loading" }>;

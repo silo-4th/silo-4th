@@ -3,7 +3,7 @@
 import { House, X } from "lucide-react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import mascot from "@/app/_assets/mascot.png";
 import { Burst } from "@/app/_components/burst";
@@ -11,7 +11,7 @@ import { FailState } from "@/app/_components/fail-state";
 import { Mascot } from "@/app/_components/mascot";
 import { QuizCard } from "@/app/_components/quiz-card";
 import { ResultChipLabel } from "@/app/_components/result-chip";
-import { type GenTrigger, genErrorType, genTrigger } from "@/lib/analytics";
+import { type GenTrigger, genErrorType, genTrigger, quizResultProps, replacedProblemId } from "@/lib/analytics";
 import { track } from "@/lib/amplitude";
 import type { Solved } from "@/lib/quiz-card";
 import {
@@ -64,7 +64,7 @@ function requestProblem(
   trigger: GenTrigger,
   unitId: string,
   settle: (problem: ProblemResult, servedAt?: string) => QuizTab | undefined,
-) {
+): Gen {
   const gen: Gen = { gen_id: genId(), trigger };
   const startedAt = performance.now();
   track("quiz_gen_request", { ...gen, unit_id: unitId, position: tab.number });
@@ -72,6 +72,7 @@ function requestProblem(
     const shown = settle(got.ok ? got.body : undefined, got.ok ? got.servedAt : undefined);
     if (shown) reportGen(gen, shown, got, Math.round(performance.now() - startedAt));
   });
+  return gen;
 }
 
 // randomUUID는 HTTPS와 localhost에서만 있다. 이벤트 ID 때문에 문제 요청이 막히지 않게 다른 값으로 대신한다.
@@ -100,6 +101,8 @@ function useQuizSet(learnerId: string, unitId: string) {
   }, [unitId]);
   // 다시 시도는 실패한 요청과 같은 까닭으로 세도록 마지막 요청의 까닭을 남긴다.
   const lastTrigger = useRef<GenTrigger>(undefined);
+  // 다시 시도를 실패한 요청과 gen_id로 잇는다. 앞선 요청의 응답은 반영하지 않으므로, 실패 화면은 늘 마지막 요청의 결과다.
+  const lastGen = useRef<Gen>(undefined);
   // 문제를 처음 내준 서버 시각이다. 풀이는 채점 전 시각으로 늦게 저장되므로, 이어 풀 때 시각을 새로 잡으면 그 풀이를 영영 세지 못한다.
   const shownAt = useRef<string>(undefined);
 
@@ -114,6 +117,8 @@ function useQuizSet(learnerId: string, unitId: string) {
     if (tab === before) return;
     // 결과에서 나오면 새 묶음이다. 새 문제를 받기 전에 새로고침해도 지난 묶음의 마지막 문제로 결과를 다시 띄우지 않는다.
     if (before.stage === "result") clearSavedProblem(learnerId);
+    // 결과 화면에서 새로고침하면 이어 풀기로 같은 결과가 다시 뜨므로, 마지막 문제에서 넘어온 결과만 보낸다.
+    if (tab.stage === "result" && before.stage === "problem") track("quiz_result_view", quizResultProps(results));
     if (tab.stage === "loading") request(before, tab);
     if (tab.stage === "resuming") void fetchResumedProblem(tab).then((problem) => settle(tab, problem, tab.shownAt));
   }
@@ -121,7 +126,7 @@ function useQuizSet(learnerId: string, unitId: string) {
   function request(before: QuizTab, tab: LoadingTab) {
     const trigger = genTrigger(before, tab, lastTrigger.current);
     lastTrigger.current = trigger;
-    requestProblem(tab, trigger, openUnit.current, (problem, servedAt) => settle(tab, problem, servedAt));
+    lastGen.current = requestProblem(tab, trigger, openUnit.current, (problem, servedAt) => settle(tab, problem, servedAt));
   }
 
   function settle(requested: QuizTab, problem: ProblemResult, servedAt?: string): QuizTab | undefined {
@@ -134,6 +139,9 @@ function useQuizSet(learnerId: string, unitId: string) {
 
   // 탭을 연 채로 학습일이 바뀌었거나 다른 탭에서 묶음을 마쳤을 수 있어, 새 묶음을 시작하는 버튼은 누를 때 저장된 학습일로 다시 판단한다.
   function send(event: QuizSetEvent): QuizSet {
+    if (event.type === "retry" && current.current.tab.stage === "failed" && lastGen.current) {
+      track("quiz_gen_retry_click", { gen_id: lastGen.current.gen_id });
+    }
     const starting = event.type === "enter" || event.type === "restart";
     const base = starting ? { ...current.current, finished: readSetFinished(learnerId) } : current.current;
     // 메모리의 finished는 지난 학습일 값일 수 있어, 바뀔 때가 아니라 묶음을 마치는 이벤트마다 오늘 학습일을 남긴다.
@@ -149,6 +157,8 @@ function useQuizSet(learnerId: string, unitId: string) {
 export function StudyPanel({ learnerId }: { learnerId: string }) {
   const { unitId } = useParams<{ unitId: string }>();
   const [opened, setOpened] = useState(true);
+  // 패널을 다시 열 때 닫혀 있던 시간을 재려고 닫은 클릭의 시각을 남긴다. 두 클릭의 timeStamp는 같은 기준에서 잰다.
+  const closedAt = useRef(0);
   const [shown, setShown] = useState<TabId>("agent");
   const [quiz, sendQuiz] = useQuizSet(learnerId, unitId);
   // 지난 문제를 연 퀴즈 홈이나 결과 상태다. 관련 문제로 그 화면을 떠났다가 돌아오면 새 상태라 지난 문제가 아니라 그 화면을 보여 준다.
@@ -170,12 +180,15 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   );
 
   // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 새로 보이는 버튼으로 포커스를 옮긴다.
-  function closePanel() {
+  function closePanel(event: MouseEvent) {
+    track("panel_close_click", { tab: shown });
+    closedAt.current = event.timeStamp;
     flushSync(() => setOpened(false));
     peek.current?.focus();
   }
 
-  function openPanel() {
+  function openPanel(event: MouseEvent) {
+    track("panel_open_click", { closed_sec: Math.round((event.timeStamp - closedAt.current) / 1000) });
     flushSync(() => setOpened(true));
     tabs.current.get(shown)?.focus();
   }
@@ -194,6 +207,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
   // 누른 버튼이 숨는 에이전트 탭에 있으므로 포커스를 퀴즈 탭으로 옮겨 키보드 사용자가 자리를 잃지 않게 한다.
   // 새로고침 뒤 퀴즈 탭을 열기 전이어도 기억해 둔 묶음의 카운트와 칩을 잇도록 함께 보낸다.
   function solveRelated(questionId: string) {
+    track("agent_related_quiz_click", { question_id: questionId, replaced_problem_id: replacedProblemId(quiz.tab) });
     setShown("quiz");
     tabs.current.get("quiz")?.focus();
     sendQuiz({ type: "related", questionId, saved: readSavedProblem(learnerId) });
@@ -275,6 +289,7 @@ export function StudyPanel({ learnerId }: { learnerId: string }) {
             onNext={(solved) => sendQuiz({ type: "next", unitId, solved })}
             onLeaveResult={(leave) => {
               // 누른 버튼이 사라지므로, 키보드 사용자가 자리를 잃지 않게 퀴즈 탭으로 포커스를 돌려준다.
+              if (leave === "restart") track("quiz_new_set_click", {});
               const next = sendQuiz(leave === "home" ? { type: "home" } : { type: "restart", unitId });
               if (!next.betaNotice) tabs.current.get("quiz")?.focus();
             }}
