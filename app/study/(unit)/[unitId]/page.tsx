@@ -41,7 +41,7 @@ async function StudyUnit({ params }: { params: Params }) {
         <AccountMenu name={learner.name} />
       </header>
       <UnitPending>
-        <UnitBody sections={sections}>
+        <UnitBody unitId={current.id} sections={sections}>
           <span className="chip mb-4 h-[26px] rounded-md px-2.5 text-[13px]">{SUBJECT_NAME}</span>
           <Markdown remarkPlugins={[remarkGfm, remarkSectionIds]}>{current.content}</Markdown>
           <ScrollToSection />

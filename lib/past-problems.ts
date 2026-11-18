@@ -79,12 +79,3 @@ export function pastList(attempts: PastAttempt[], filter: PastFilter): PastCard[
     .map(pastCard);
   return filter === "전체" ? cards : cards.filter((card) => card.chip === FILTER_CHIP[filter]);
 }
-
-export async function fetchPastAttempts(): Promise<PastAttempt[] | undefined> {
-  try {
-    const response = await fetch("/api/quiz-attempts");
-    return response.ok ? ((await response.json()) as PastAttempt[]) : undefined;
-  } catch {
-    return undefined;
-  }
-}

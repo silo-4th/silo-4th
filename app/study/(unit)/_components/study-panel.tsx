@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import { type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { useQuery } from "@tanstack/react-query";
 import mascot from "@/app/_assets/mascot.png";
 import { Burst } from "@/app/_components/burst";
 import { FailState } from "@/app/_components/fail-state";
@@ -13,6 +14,8 @@ import { QuizCard } from "@/app/_components/quiz-card";
 import { ResultChipLabel } from "@/app/_components/result-chip";
 import { type GenTrigger, genErrorType, genTrigger, quizResultProps, replacedProblemId } from "@/lib/analytics";
 import { track } from "@/lib/amplitude";
+import type { Fetched } from "@/lib/fetch-json";
+import { quizHomeQuery } from "@/lib/queries";
 import type { Solved } from "@/lib/quiz-card";
 import {
   SET_SIZE,
@@ -20,12 +23,10 @@ import {
   type QuizSet,
   type QuizSetEvent,
   type QuizTab,
-  type Fetched,
   type SetResults,
   advanceQuizSet,
   clearSavedProblem,
   completesSet,
-  fetchPersonalized,
   fetchProblem,
   fetchResumedProblem,
   gaugeFilled,
@@ -337,7 +338,7 @@ function QuizTabBody({ set, unitId, active, pastShown, onPast, guide, onStart, o
     <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-5 ${pastShown ? "scroll-pt-14" : ""}`}>
       {/* 지난 문제는 패널 맨 위에 제목 줄을 두므로 첫 진입 안내를 가린다. 닫은 안내가 다시 뜨지 않게 지우지 않고 숨긴다. */}
       <div hidden={pastShown}>{guide}</div>
-      {/* 읽고 물어볼 때마다 안내가 바뀌므로, 탭을 열 때마다 새로 그려 다시 묻는다. */}
+      {/* 탭을 열 때마다 새로 그리지만, 받아 둔 목록과 안내는 바뀐 때만 다시 받는다. */}
       {pastShown && active && (
         <PastProblems
           onBack={() => {
@@ -429,22 +430,13 @@ function QuizResult({ results, pastRef, onLeave, onPast }: QuizResultProps) {
 }
 
 // 안내 문구가 나중에 붙으면 화면이 밀리므로, 응답을 받을 때까지 홈 대신 로딩을 두고 한 번에 보여 준다.
-// 받지 못하면 틀린 안내를 띄우지 않도록 문구만 빼고 보여 준다.
+// 받지 못하면 틀린 안내를 띄우지 않도록 문구만 빼고 보여 주고, 다음에 열 때 다시 받는다.
 type QuizHomeProps = { unitId: string; pastRef: (element: HTMLElement | null) => void; onStart: () => void; onPast: () => void };
 
 function QuizHome({ unitId, pastRef, onStart, onPast }: QuizHomeProps) {
-  const [personalized, setPersonalized] = useState<{ unitId: string; value: boolean | undefined }>();
-  useEffect(() => {
-    let current = true;
-    void fetchPersonalized(unitId).then((value) => {
-      if (current) setPersonalized({ unitId, value });
-    });
-    return () => {
-      current = false;
-    };
-  }, [unitId]);
-  if (personalized?.unitId !== unitId) return <QuizHomeLoading />;
-  const known = personalized.value;
+  const personalized = useQuery(quizHomeQuery(unitId));
+  if (personalized.isPending) return <QuizHomeLoading />;
+  const known = personalized.data;
 
   return (
     <div className="my-auto flex flex-col items-center px-1 pb-20 text-center">

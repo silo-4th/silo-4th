@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Lightbulb, ListChecks, Menu, RotateCw, Sparkles, SquarePen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { type FormEvent, Fragment, type KeyboardEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
@@ -11,6 +12,7 @@ import { Mascot } from "@/app/_components/mascot";
 import { track } from "@/lib/amplitude";
 import { answerAsk } from "@/lib/answer-quote";
 import { askQuestion } from "@/lib/answer-stream";
+import { refreshQuizHome, sessionQuery, sessionsQuery } from "@/lib/queries";
 import {
   ANSWER_TONES,
   type AnswerTone,
@@ -79,15 +81,6 @@ function rememberOpenedSession(sessionId: string) {
   } catch {}
 }
 
-async function fetchJson<T>(url: string): Promise<T | undefined> {
-  try {
-    const response = await fetch(url);
-    return response.ok ? ((await response.json()) as T) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 // 단원이 없는 예전 질문은 다시 보낼 때 지금 열린 단원으로 묻는다.
 function savedTurn(
   sessionId: string,
@@ -114,7 +107,7 @@ export function QuestionPanel({
 }) {
   const { unitId } = useParams<{ unitId: string }>();
   const router = useRouter();
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const queryClient = useQueryClient();
   const [openedSession, setOpenedSession] = useState<string>();
   const [historyOpened, setHistoryOpened] = useState(false);
   const [betaOpened, setBetaOpened] = useState(false);
@@ -124,12 +117,14 @@ export function QuestionPanel({
   const [notice, setNotice] = useState<{ text: string }>();
   // 세션을 오가도 답을 받는 중인 질문이 이어지도록 모든 세션의 질문을 한곳에 두고, 열린 세션의 질문만 보여 준다.
   const [turns, setTurns] = useState<Turn[]>([]);
-  // 이미 불러왔거나 이 탭에서 만든 세션이다. 다시 불러오지 않아 화면에서 받는 중인 답을 덮지 않는다.
-  const loadedSessions = useRef(new Set<string>());
-  // 저장된 질문을 받는 중이거나 받지 못한 세션이다. 받으면 지운다.
-  const [sessionLoads, setSessionLoads] = useState<Record<string, "loading" | "failed">>({});
-  const [listLoad, setListLoad] = useState<"loading" | "failed" | "done">("loading");
-  const [listAttempt, setListAttempt] = useState(0);
+  // 저장된 질문을 turns에 넣은 세션이다. 다시 넣지 않아 화면에서 받는 중인 답이나 새 ID로 다시 물은 질문을 덮지 않는다.
+  const mergedSessions = useRef(new Set<string>());
+  // 목록과 지난 대화는 받은 뒤에 열 대화를 고르거나 turns에 넣어야 해서 아래 함수가 직접 받는다.
+  // 이 두 쿼리는 받은 값과 받는 중인지, 받지 못했는지만 읽는다.
+  const list = useQuery({ ...sessionsQuery, enabled: false });
+  const sessions = list.data ?? [];
+  const listLoad = list.data ? "done" : list.isError ? "failed" : "loading";
+  const opened = useQuery({ ...sessionQuery(openedSession ?? ""), enabled: false });
   const [hasDraft, setHasDraft] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const historyButton = useRef<HTMLButtonElement>(null);
@@ -140,25 +135,19 @@ export function QuestionPanel({
     if (listLoad === "done") rememberOpenedSession(sessionId);
   }
 
+  // 받지 못한 대화는 다시 열거나 다시 시도할 때 다시 받는다.
   function openSession(sessionId: string) {
     show(sessionId);
-    if (loadedSessions.current.has(sessionId)) return;
-    loadedSessions.current.add(sessionId);
-    setSessionLoads((previous) => ({ ...previous, [sessionId]: "loading" }));
-    void fetchJson<{ turns: SessionTurn[] }>(`/api/question-sessions/${sessionId}`).then((result) => {
-      if (!result) {
-        loadedSessions.current.delete(sessionId);
-        setSessionLoads((previous) => ({ ...previous, [sessionId]: "failed" }));
-        return;
-      }
-      const saved = result.turns.map((turn) => savedTurn(sessionId, unitId, turn));
-      setTurns((previous) => [...saved.filter(({ id }) => !previous.some((turn) => turn.id === id)), ...previous]);
-      setSessionLoads((previous) => {
-        const rest = { ...previous };
-        delete rest[sessionId];
-        return rest;
-      });
-    });
+    if (mergedSessions.current.has(sessionId)) return;
+    queryClient.fetchQuery(sessionQuery(sessionId)).then(
+      (savedTurns) => {
+        if (mergedSessions.current.has(sessionId)) return;
+        mergedSessions.current.add(sessionId);
+        const saved = savedTurns.map((turn) => savedTurn(sessionId, unitId, turn));
+        setTurns((previous) => [...saved.filter(({ id }) => !previous.some((turn) => turn.id === id)), ...previous]);
+      },
+      () => {},
+    );
   }
 
   // 세션은 첫 질문을 보낼 때 서버에 생기므로, 질문하기 전까지는 목록에 넣지 않는다.
@@ -166,21 +155,19 @@ export function QuestionPanel({
     show(freshSession());
   }
 
+  // 서버에 아직 없는 세션이라 받지 않도록 빈 대화로 넣어 둔다.
   function freshSession() {
     const sessionId = crypto.randomUUID();
-    loadedSessions.current.add(sessionId);
+    queryClient.setQueryData(sessionQuery(sessionId).queryKey, []);
     return sessionId;
   }
 
   // 목록을 받지 못해도 질문은 할 수 있게 새 대화를 연다. 아직 목록 상태가 바뀌기 전이라 show를 거치지 않고 기억하지 않는다.
   const restoreSession = useEffectEvent((saved: SessionSummary[] | undefined) => {
     if (!saved) {
-      setListLoad("failed");
       if (!openedSession) setOpenedSession(freshSession());
       return;
     }
-    setListLoad("done");
-    setSessions(saved);
     // 대화 기록 메뉴에서 다시 받은 목록은 메뉴에만 보여 주고, 학습자가 보던 대화는 바꾸지 않는다.
     if (openedSession) return;
     const remembered = readOpenedSession();
@@ -190,19 +177,8 @@ export function QuestionPanel({
   });
 
   useEffect(() => {
-    let active = true;
-    void fetchJson<{ sessions: SessionSummary[] }>("/api/question-sessions").then((result) => {
-      if (active) restoreSession(result?.sessions);
-    });
-    return () => {
-      active = false;
-    };
-  }, [listAttempt]);
-
-  function retryList() {
-    setListLoad("loading");
-    setListAttempt((count) => count + 1);
-  }
+    queryClient.fetchQuery(sessionsQuery).then(restoreSession, () => restoreSession(undefined));
+  }, [queryClient]);
 
   useEffect(() => {
     if (!notice) return;
@@ -238,6 +214,8 @@ export function QuestionPanel({
       update(question.id, (turn) => (turn.status === "sending" ? { ...turn, answer } : turn)),
     );
     clearTimeout(slow);
+    // 서버는 답을 만들기 전에 질문의 개념을 나눠 저장하므로, 답이 끊기거나 실패해도 퀴즈 홈 맞춤 여부가 바뀌었을 수 있다.
+    void refreshQuizHome(queryClient, askedUnitId);
     if (result.ok) {
       update(question.id, () => ({ ...question, status: "answered", answer: result.answer }));
       return;
@@ -283,10 +261,15 @@ export function QuestionPanel({
     // 질문하면 서버에 남는 대화가 되므로, 목록을 받지 못한 동안 연 대화도 이제 기억한다.
     rememberOpenedSession(sessionId);
     // 마지막으로 질문한 세션을 맨 위로 올린다. 처음 질문한 세션은 이 질문이 제목이 된다.
-    setSessions((previous) => [
-      { id: sessionId, title: previous.find(({ id }) => id === sessionId)?.title ?? content },
-      ...previous.filter(({ id }) => id !== sessionId),
-    ]);
+    // 목록을 받지 못했으면 바꾸지 않아, 대화 기록 메뉴가 계속 다시 시도를 보여 준다.
+    queryClient.setQueryData(
+      sessionsQuery.queryKey,
+      (previous) =>
+        previous && [
+          { id: sessionId, title: previous.find(({ id }) => id === sessionId)?.title ?? content },
+          ...previous.filter(({ id }) => id !== sessionId),
+        ],
+    );
   }
 
   // 마지막 답을 인용해 드래그 메뉴와 같은 문구로 묻는다. 답에는 절이 없어 절 개념 없이 보낸다.
@@ -335,7 +318,7 @@ export function QuestionPanel({
   // 목록에 있는 세션은 저장된 질문이 있으므로, 불러오는 중이거나 불러오지 못했을 때도 빈 대화 인사를 띄우지 않는다.
   const empty = shown.length === 0 && openedSession !== undefined && !sessions.some(({ id }) => id === openedSession);
   // 처음 세션 목록을 받기 전에는 열 대화가 없어 지난 대화를 받는 중으로 본다. 목록을 받지 못한 것은 대화 기록 메뉴에서만 알린다.
-  const load = openedSession === undefined ? "loading" : sessionLoads[openedSession];
+  const load = openedSession === undefined || opened.isPending ? "loading" : opened.isError ? "failed" : undefined;
   // 시안처럼 쓴 글이 없거나, 지난 대화를 받는 중이거나, 이 대화의 답을 받는 중이면 보내지 않는다.
   const canSend = hasDraft && load !== "loading" && !shown.some(({ status }) => status === "sending");
   // 드래그 메뉴 버튼도 입력창처럼 막는다. 지난 대화를 받지 못했을 때도 막아, 보낸 질문이 실패 화면에 가려지지 않게 한다.
@@ -540,7 +523,7 @@ export function QuestionPanel({
           sessions={sessions}
           listLoad={listLoad}
           openedSession={openedSession}
-          onRetry={retryList}
+          onRetry={() => void list.refetch()}
           onOpen={(sessionId) => {
             if (sessionId !== openedSession) track("agent_history_item_click", {});
             openSession(sessionId);

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { BrandHeader } from "@/app/_components/brand-header";
 import { requireLearner } from "@/lib/auth";
 import { AccountMenu } from "@/app/_components/account-menu";
+import { QueryProvider } from "./_components/query-provider";
 import { RecallGate } from "./_components/recall-gate";
 import { SelectionAskProvider } from "./_components/selection-ask";
 import { StudyPanel } from "./_components/study-panel";
@@ -9,26 +10,28 @@ import { UnitSwitch } from "./_components/unit-switch";
 
 export default function UnitLayout({ children }: LayoutProps<"/study">) {
   return (
-    <RecallGate
-      header={
-        <BrandHeader>
-          <Suspense>
-            <LearnerAccountMenu />
-          </Suspense>
-        </BrandHeader>
-      }
-    >
-      <SelectionAskProvider>
-        <div className="relative flex h-screen">
-          <div className="flex min-w-0 flex-1">
-            <UnitSwitch>{children}</UnitSwitch>
+    <QueryProvider>
+      <RecallGate
+        header={
+          <BrandHeader>
+            <Suspense>
+              <LearnerAccountMenu />
+            </Suspense>
+          </BrandHeader>
+        }
+      >
+        <SelectionAskProvider>
+          <div className="relative flex h-screen">
+            <div className="flex min-w-0 flex-1">
+              <UnitSwitch>{children}</UnitSwitch>
+            </div>
+            <Suspense>
+              <LearnerStudyPanel />
+            </Suspense>
           </div>
-          <Suspense>
-            <LearnerStudyPanel />
-          </Suspense>
-        </div>
-      </SelectionAskProvider>
-    </RecallGate>
+        </SelectionAskProvider>
+      </RecallGate>
+    </QueryProvider>
   );
 }
 

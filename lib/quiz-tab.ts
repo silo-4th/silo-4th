@@ -1,11 +1,8 @@
-import type { FetchFailure } from "@/lib/analytics";
+import { type Fetched, fetchJson } from "@/lib/fetch-json";
 import type { Solved } from "@/lib/quiz-card";
 import type { ProblemView, ResumedProblem } from "@/lib/quiz-problems";
 import { RESULT_CHIPS, type ResultChip, chipOf, needsReview, resultTitle } from "@/lib/recall-result";
 import { studyDay } from "@/lib/study-day";
-
-// 생성은 30초까지 걸릴 수 있다. 응답이 오지 않는 요청을 끝없이 기다리지 않게 넉넉히 기다린 뒤 실패로 본다.
-export const PROBLEM_TIMEOUT_MS = 45_000;
 
 // 문제 생성 API에 보내는 본문 그대로다. 관련 문제 풀어보기는 질문 ID로 부른다.
 export type ProblemAsk = { unitId: string } | { questionId: string };
@@ -197,30 +194,6 @@ export function settleQuizSet(current: QuizSet, requested: QuizTab, problem: Pro
   return current.tab === requested ? advanceQuizSet(current, settledEvent(problem)) : current;
 }
 
-// servedAt은 응답의 Date 헤더로 읽은 서버 시각이다. 초 단위로 내림되어 있어 그 응답 뒤의 풀이는 모두 이 시각 이후다.
-// 실패는 이벤트의 error_type으로 나누도록 상태 코드나 응답이 없던 까닭을 남긴다.
-export type Fetched<T> = { ok: true; body: T; servedAt?: string } | { ok: false; failure: FetchFailure };
-
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<Fetched<T>> {
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, PROBLEM_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    if (!response.ok) return { ok: false, failure: response.status };
-    const date = new Date(response.headers.get("date") ?? "");
-    const body = (await response.json()) as T;
-    return Number.isNaN(date.getTime()) ? { ok: true, body } : { ok: true, body, servedAt: date.toISOString() };
-  } catch {
-    return { ok: false, failure: timedOut ? "timeout" : "network" };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // 502, 400, 404와 연결 실패를 화면은 구분하지 않는다. 모두 오류와 다시 시도를 보여 주고, 기본 문제로 대신하지 않는다.
 export function fetchProblem(ask: ProblemAsk): Promise<Fetched<ProblemView>> {
   return fetchJson<ProblemView>("/api/quiz-problems", {
@@ -228,11 +201,6 @@ export function fetchProblem(ask: ProblemAsk): Promise<Fetched<ProblemView>> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(askOf(ask)),
   });
-}
-
-export async function fetchPersonalized(unitId: string): Promise<boolean | undefined> {
-  const home = await fetchJson<{ personalized: boolean }>(`/api/quiz-home?${new URLSearchParams({ unitId })}`);
-  return home.ok ? home.body.personalized : undefined;
 }
 
 export async function fetchResumedProblem({ problemId, shownAt }: { problemId: string; shownAt?: string }): Promise<ProblemResult> {
