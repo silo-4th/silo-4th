@@ -1,10 +1,12 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, Lightbulb, LoaderCircle, RotateCw, X } from "lucide-react";
 import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttemptInput, AttemptResult } from "@/lib/quiz-attempts";
+import { refreshPastAttempts } from "@/lib/queries";
 import { type Mark, type Solved, choiceMarks, fillLines, resultView, sendAttempt, shownStem } from "@/lib/quiz-card";
 import {
   MAX_ANSWER_LENGTH,
@@ -79,6 +81,7 @@ export function QuizCard({ problem, onNext, nextLabel, onGraded, pinNext = false
 
   // 부르는 쪽이 매번 새 함수를 넘겨도 채점 요청을 다시 보내지 않게 효과의 의존성에서 뺀다.
   const graded = useEffectEvent((solved: Solved) => onGraded?.(solved));
+  const queryClient = useQueryClient();
   const grading = flow.stage === "grading" ? flow : undefined;
   const shown = shownAnswer(flow);
   // 답을 낸 뒤에 연 힌트는 화면에만 보여 준다. 다시 시도해도 처음 낸 풀이를 그대로 보내야 하므로 기록하지 않는다.
@@ -88,6 +91,8 @@ export function QuizCard({ problem, onNext, nextLabel, onGraded, pinNext = false
     if (!grading) return;
     let active = true;
     void sendAttempt(grading.request).then((result) => {
+      // 채점 중에 카드가 사라지거나 응답을 잃어도 풀이는 저장됐을 수 있어, 화면을 고치기 전에 지난 문제를 다시 받게 한다.
+      void refreshPastAttempts(queryClient);
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
       if (result) graded({ submitted: grading.request, result });
@@ -95,7 +100,7 @@ export function QuizCard({ problem, onNext, nextLabel, onGraded, pinNext = false
     return () => {
       active = false;
     };
-  }, [grading]);
+  }, [grading, queryClient]);
 
   function next() {
     if (flow.stage === "explanation") onNext({ submitted: flow.submitted, result: flow.result });

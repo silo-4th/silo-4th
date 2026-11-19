@@ -4,7 +4,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { concept, questionConcept, quizAttempt, quizProblem } from "@/lib/db/schema";
 import type { ProblemView } from "@/lib/quiz-problems";
 import { studyDay } from "@/lib/study-day";
-import { createLearner, daysFromNow, db, deleteLearner, firstUnits, saveAnswered, test } from "./fixtures";
+import { createLearner, daysFromNow, db, deleteLearner, firstUnits, saveAnswered, test, unitsWithSections } from "./fixtures";
 
 const PROBLEMS_PATH = "**/api/quiz-problems";
 
@@ -828,4 +828,119 @@ test("TC-306 빈칸 문제에서 답과 확신도를 고른 뒤 입력칸에서 
   grading.release();
   await expect(card.getByRole("region", { name: "채점 결과와 해설" })).toBeVisible();
   expect(posts).toBe(1);
+});
+
+// 다시 받으면 로딩이 오래 보이도록 첫 요청 뒤로는 늦게 돌려준다. 다시 받지 않으면 이 지연은 화면에 드러나지 않는다.
+const REFETCH_DELAY_MS = 3_000;
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+test("TC-343 한 단원에서 퀴즈 탭을 세 번 열어도 퀴즈 홈 요청은 한 번만 가고, 두 번째부터는 로딩 말풍선 없이 퀴즈 홈이 바로 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const questionId = randomUUID();
+  await saveAnswered(
+    learnerId,
+    { questionId, sessionId: randomUUID(), unitId: first.id, content: "GROUP BY 뒤에 조건은 어디에 쓰나요?" },
+    "HAVING에 써요.",
+  );
+  await db.insert(questionConcept).values({ questionId, conceptId: (await firstConcept(first.id)).id });
+  let homeRequests = 0;
+  await page.route("**/api/quiz-home?*", async (route) => {
+    homeRequests += 1;
+    if (homeRequests > 1) await delay(REFETCH_DELAY_MS);
+    return route.continue();
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  const loading = panel.getByText("퀴즈 홈을 불러오고 있어요");
+  await expect(panel.getByText("문제를 출제해요")).toBeVisible();
+
+  for (let opened = 2; opened <= 3; opened += 1) {
+    await tab(page, "AI 에이전트").click();
+    await expect(panel).toBeHidden();
+    await tab(page, "퀴즈").click();
+    await expect(panel.getByRole("button", { name: "AI 맞춤 문제 풀기" })).toBeVisible({ timeout: 1_000 });
+    await expect(panel.getByText("문제를 출제해요")).toBeVisible({ timeout: 1_000 });
+    await expect(loading).toHaveCount(0);
+  }
+  expect(homeRequests).toBe(1);
+});
+
+test("TC-344 본 절도 대화도 없는 학습자가 퀴즈 홈을 본 뒤 절을 읽고 퀴즈 탭을 다시 열면 맞춤 안내로 바뀌어요", async ({ page }) => {
+  const target = (await unitsWithSections()).find((unit) => unit.sections.some((section) => section.conceptId !== null));
+  const section = target?.sections.find((candidate) => candidate.conceptId !== null);
+  if (!target || !section) throw new Error("테스트 DB에 개념 ID가 있는 절이 있어야 한다.");
+
+  await page.goto(`/study/${target.id}`);
+  const heading = page.getByRole("heading", { level: 3, name: section.title, exact: true });
+  await expect(heading).toBeAttached();
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  await expect(panel.getByText("아직 나눈 대화가 없어서 기출 문제로 준비했어요")).toBeVisible();
+
+  await tab(page, "AI 에이전트").click();
+  const seen = page.waitForResponse(
+    (response) => response.url().endsWith("/api/section-views") && response.request().method() === "POST" && response.ok(),
+  );
+  await heading.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await seen;
+
+  await tab(page, "퀴즈").click();
+  await expect(panel.getByText("문제를 출제해요")).toBeVisible();
+  await expect(panel.getByText("기출 문제로 준비했어요")).toHaveCount(0);
+});
+
+test("TC-345 지난 문제를 다시 열면 요청 없이 목록이 바로 보이고, 그 사이 문제를 채점받았으면 방금 푼 문제가 보여요", async ({ page, learnerId }) => {
+  const [first] = await firstUnits(1);
+  if (!first) throw new Error("테스트 DB에 단원이 있어야 한다.");
+  const earlier = await storeProblem(learnerId, await firstConcept(first.id), "지난번에 푼 그룹 조건 문제");
+  await db.insert(quizAttempt).values({
+    id: randomUUID(),
+    learnerId,
+    problemId: earlier.id,
+    studyDay: studyDay(new Date()),
+    chosenIndex: 1,
+    confidence: "sure",
+    isCorrect: true,
+    appVersion: "e2e",
+  });
+  const views = await storeProblems(learnerId, first.id, 3);
+  let served = 0;
+  await page.route(PROBLEMS_PATH, (route) => route.fulfill({ json: views[served++] }));
+  let listed = 0;
+  await page.route(ATTEMPTS_PATH, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    listed += 1;
+    if (listed > 1) await delay(REFETCH_DELAY_MS);
+    return route.continue();
+  });
+
+  await page.goto(`/study/${first.id}`);
+  await tab(page, "퀴즈").click();
+  const panel = quizPanel(page);
+  const past = panel.getByRole("button", { name: "지난 문제 보기" });
+  const back = panel.getByRole("button", { name: "돌아가기" });
+  const items = panel.getByRole("list", { name: "지난 문제 목록" }).getByRole("listitem");
+  const loading = panel.getByRole("status").filter({ hasText: "지난 문제를 불러오고 있어요" });
+
+  await past.click();
+  await expect(items.first().getByText(earlier.stem, { exact: true })).toBeVisible();
+  await back.click();
+  await past.click();
+  await expect(items.first().getByText(earlier.stem, { exact: true })).toBeVisible({ timeout: 1_000 });
+  await expect(loading).toHaveCount(0);
+  expect(listed).toBe(1);
+  await back.click();
+
+  await startQuiz(page);
+  await solveSet(page, views);
+  await panel.getByRole("button", { name: "퀴즈 홈" }).click();
+  await past.click();
+  await expect(items).toHaveCount(4);
+  await expect(items.first().getByText(views[2]?.stem ?? "", { exact: true })).toBeVisible();
 });

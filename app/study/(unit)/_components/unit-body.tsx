@@ -2,9 +2,11 @@
 
 import { Lightbulb, Sparkles } from "lucide-react";
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { track } from "@/lib/amplitude";
 import { readerAction } from "@/lib/analytics";
 import { DRAG_MENU_ASKS, type QuoteAsk, placeDragMenu, type SelectionQuestion, selectionQuestion } from "@/lib/drag-menu";
+import { refreshQuizHome } from "@/lib/queries";
 import {
   type DwellClock,
   dwellSeconds,
@@ -30,13 +32,16 @@ type Picked = { id: number; selection: SelectionQuestion; box: { left: number; r
 const ASK_ICONS = { easier: Sparkles, example: Lightbulb };
 
 // 본문 스크롤 영역이다. 절 소제목이 맨 위에 닿으면 본 절로 남기고, 그 절을 떠날 때 머문 시간을 보낸다.
-export function UnitBody({ sections, children }: { sections: Section[]; children: ReactNode }) {
+export function UnitBody({ unitId, sections, children }: { unitId: string; sections: Section[]; children: ReactNode }) {
   const bodyRef = useRef<HTMLElement>(null);
   const tocRef = useRef<HTMLElement>(null);
   const [reading, setReading] = useState<number>();
   const [picked, setPicked] = useState<Picked>();
   const selectionAsks = useSelectionAsk();
   const canAsk = useSelectionAskReady();
+  const queryClient = useQueryClient();
+  // 본 절이 처음 남으면 퀴즈 홈의 맞춤 여부가 바뀔 수 있다.
+  const seen = useEffectEvent(() => void refreshQuizHome(queryClient, unitId));
 
   // 선택한 글을 다시 누르거나 본문 밖을 눌러 선택이 풀리면, 또는 새로 드래그하기 시작하면 메뉴를 닫는다.
   // 풀린 선택이나 앞 선택으로 질문이 가지 않게 한다.
@@ -91,7 +96,12 @@ export function UnitBody({ sections, children }: { sections: Section[]; children
       visit = {
         index,
         conceptId,
-        studyDay: conceptId ? sendSeen(conceptId) : Promise.resolve(null),
+        studyDay: conceptId
+          ? sendSeen(conceptId).then((day) => {
+              if (day) seen();
+              return day;
+            })
+          : Promise.resolve(null),
         clock: startDwell(performance.now(), document.visibilityState === "visible"),
       };
     };

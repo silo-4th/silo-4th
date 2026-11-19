@@ -63,6 +63,7 @@
 | [0011](adr/0011-default-quiz-problems.md) | 기본 문제는 TS 모듈에서 만든 마이그레이션으로 넣고, 바꿀 때마다 새 마이그레이션으로 교체한다 | 확정 |
 | [0012](adr/0012-single-concept-classification.md) | 질문 하나에는 개념 하나만 연결하고, 분류 프롬프트에 개념별 한 줄 정리를 붙인다 | 확정 |
 | [0013](adr/0013-amplitude-event-logging.md) | 이벤트 로그는 앰플리튜드 브라우저 SDK로 보내고, 자동 수집을 끄고 학습자가 쓴 글은 보내지 않는다 | 확정 |
+| [0014](adr/0014-client-state-management.md) | 브라우저가 받는 서버 데이터는 TanStack Query로 관리하고, 컴포넌트 사이에서 나누는 상태만 Zustand로 옮긴다 | 확정 |
 
 ## 아직 도입하지 않은 규칙
 

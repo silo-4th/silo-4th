@@ -1,12 +1,14 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronLeft } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FailState } from "@/app/_components/fail-state";
 import { ResultChipLabel } from "@/app/_components/result-chip";
-import { PAST_FILTERS, type PastAttempt, type PastCard, type PastFilter, fetchPastAttempts, pastList } from "@/lib/past-problems";
+import { PAST_FILTERS, type PastCard, type PastFilter, pastList } from "@/lib/past-problems";
+import { pastAttemptsQuery } from "@/lib/queries";
 
 // 누른 버튼이 사라져 자리를 잃은 키보드와 스크린리더 사용자에게 새로 뜬 요소로 포커스를 옮긴다.
 // 탭을 바꿔 다시 그려질 때처럼 패널 밖에서 읽던 자리는 빼앗지 않는다.
@@ -18,28 +20,13 @@ export function focusOnMount(element: HTMLElement | null) {
   if (lost) element.focus();
 }
 
-type Loaded = { kind: "loading" } | { kind: "failed" } | { kind: "loaded"; attempts: PastAttempt[] };
-
-// 열 때마다 새로 받는다. 퀴즈 탭에서 방금 푼 문제도 바로 보여야 한다.
+// 받아 둔 목록이 있으면 다시 받지 않고 바로 보여 준다. 채점을 보내면 결과와 상관없이 다음에 열 때 앞 목록을 먼저 보여 주고 새로 받는다.
 export function PastProblems({ onBack }: { onBack: () => void }) {
-  const [loaded, setLoaded] = useState<Loaded>({ kind: "loading" });
+  const past = useQuery(pastAttemptsQuery);
   const [filter, setFilter] = useState<PastFilter>("전체");
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let current = true;
-    void fetchPastAttempts().then((attempts) => {
-      if (current) setLoaded(attempts ? { kind: "loaded", attempts } : { kind: "failed" });
-    });
-    return () => {
-      current = false;
-    };
-  }, [attempt]);
-
-  function retry() {
-    setLoaded({ kind: "loading" });
-    setAttempt((count) => count + 1);
-  }
+  const attempts = past.data;
+  const failed = !attempts && past.isError;
+  const loading = !attempts && !failed;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -59,9 +46,9 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
       </div>
       {/* 스크린리더는 내용을 담은 채 새로 생긴 live region을 읽지 않기도 해서, 자리는 늘 두고 글만 바꾼다. */}
       <p role="status" className="sr-only">
-        {loaded.kind === "loading" && "지난 문제를 불러오고 있어요"}
+        {loading && "지난 문제를 불러오고 있어요"}
       </p>
-      {loaded.kind === "loading" && (
+      {loading && (
         <div aria-hidden className="-mx-5 flex flex-col pt-2">
           {[64, 52, 70, 58].map((width) => (
             <div
@@ -77,11 +64,11 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
           ))}
         </div>
       )}
-      {loaded.kind === "failed" && <FailState title="목록을 불러오지 못했어요" onRetry={retry} />}
-      {loaded.kind === "loaded" && loaded.attempts.length === 0 && (
+      {failed && <FailState title="목록을 불러오지 못했어요" onRetry={() => void past.refetch()} />}
+      {attempts?.length === 0 && (
         <p className="pt-4 text-[13px] leading-relaxed text-gray">아직 푼 확인 문제가 없어요. 문제를 풀면 여기에 모여요.</p>
       )}
-      {loaded.kind === "loaded" && loaded.attempts.length > 0 && (
+      {attempts && attempts.length > 0 && (
         <>
           <div role="group" aria-label="결과로 거르기" className="mt-4 flex flex-wrap gap-1.5">
             {PAST_FILTERS.map((option) => (
@@ -96,7 +83,7 @@ export function PastProblems({ onBack }: { onBack: () => void }) {
               </button>
             ))}
           </div>
-          <PastList cards={pastList(loaded.attempts, filter)} />
+          <PastList cards={pastList(attempts, filter)} />
         </>
       )}
     </div>
