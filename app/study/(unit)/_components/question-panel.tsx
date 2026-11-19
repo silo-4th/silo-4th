@@ -214,8 +214,9 @@ export function QuestionPanel({
       update(question.id, (turn) => (turn.status === "sending" ? { ...turn, answer } : turn)),
     );
     clearTimeout(slow);
-    // 서버는 답을 만들기 전에 질문의 개념을 나눠 저장하므로, 답이 끊기거나 실패해도 퀴즈 홈 맞춤 여부가 바뀌었을 수 있다.
-    void refreshQuizHome(queryClient, askedUnitId);
+    // 서버는 답을 만들기 전에 질문의 개념을 나눠 저장하므로 퀴즈 홈 맞춤 여부가 바뀌었을 수 있다.
+    // 답이 끊기거나 실패하면 서버가 아직 개념을 저장하는 중일 수 있어, 바로 받지 않고 다음에 열 때 받는다.
+    void refreshQuizHome(queryClient, askedUnitId, result.ok);
     if (result.ok) {
       update(question.id, () => ({ ...question, status: "answered", answer: result.answer }));
       return;

@@ -1,4 +1,4 @@
-import { QueryClient, queryOptions } from "@tanstack/react-query";
+import { QueryClient, type QueryFilters, queryOptions } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/fetch-json";
 import type { PastAttempt } from "@/lib/past-problems";
 import type { SessionSummary, SessionTurn } from "@/lib/question-sessions";
@@ -46,16 +46,16 @@ export const pastAttemptsQuery = queryOptions({
 });
 
 // 그 단원에서 절을 보거나 질문을 보낸 뒤 부른다. 맞춤 여부는 한 번 참이 되면 거짓으로 돌아가지 않아 참이면 다시 받지 않는다.
-// 퀴즈 홈이 닫혀 있어도 바로 받아 두어, 다시 열 때 지난 안내가 잠깐 보이지 않게 한다.
-export function refreshQuizHome(client: QueryClient, unitId: string) {
-  return client.invalidateQueries({
-    queryKey: quizHomeQuery(unitId).queryKey,
-    predicate: (query) => query.state.data !== true,
-    refetchType: "all",
-  });
+// 바뀐 것이 저장됐으면 퀴즈 홈이 닫혀 있어도 바로 받아 두어, 다시 열 때 지난 안내가 잠깐 보이지 않게 한다.
+// 저장됐는지 모르면 무효 표시만 남겨, 퀴즈 홈을 다음에 열 때 받게 한다.
+// 처음 받는 요청은 무효화해도 그대로 쓰이므로, 바뀌기 전 값을 읽었을 수 있는 진행 중인 요청은 먼저 취소한다.
+export async function refreshQuizHome(client: QueryClient, unitId: string, saved = true) {
+  const filters: QueryFilters = { queryKey: quizHomeQuery(unitId).queryKey, predicate: (query) => query.state.data !== true };
+  await client.cancelQueries(filters);
+  await client.invalidateQueries({ ...filters, refetchType: saved ? "all" : "none" });
 }
 
-// 채점 결과를 받아 풀이가 저장된 뒤 부른다. 지난 문제는 다음에 열 때 앞 목록을 먼저 보여 주고 새로 받는다.
+// 채점을 보낸 뒤 부른다. 응답을 받지 못해도 서버에는 저장됐을 수 있다. 지난 문제는 다음에 열 때 앞 목록을 먼저 보여 주고 새로 받는다.
 export function refreshPastAttempts(client: QueryClient) {
   return client.invalidateQueries({ queryKey: pastAttemptsQuery.queryKey });
 }

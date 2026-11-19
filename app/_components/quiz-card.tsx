@@ -91,8 +91,8 @@ export function QuizCard({ problem, onNext, nextLabel, onGraded, pinNext = false
     if (!grading) return;
     let active = true;
     void sendAttempt(grading.request).then((result) => {
-      // 채점 중에 카드가 사라져도 풀이는 저장되므로, 화면을 고치기 전에 지난 문제를 다시 받게 한다.
-      if (result) void refreshPastAttempts(queryClient);
+      // 채점 중에 카드가 사라지거나 응답을 잃어도 풀이는 저장됐을 수 있어, 화면을 고치기 전에 지난 문제를 다시 받게 한다.
+      void refreshPastAttempts(queryClient);
       if (!active) return;
       setFlow((current) => advanceQuizFlow(current, result ? { type: "graded", result } : { type: "grading-failed" }));
       if (result) graded({ submitted: grading.request, result });
