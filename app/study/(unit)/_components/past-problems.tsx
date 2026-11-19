@@ -20,7 +20,7 @@ export function focusOnMount(element: HTMLElement | null) {
   if (lost) element.focus();
 }
 
-// 받아 둔 목록이 있으면 다시 받지 않고 바로 보여 준다. 채점이 성공하면 다음에 열 때 앞 목록을 먼저 보여 주고 새로 받는다.
+// 받아 둔 목록이 있으면 다시 받지 않고 바로 보여 준다. 채점을 보내면 결과와 상관없이 다음에 열 때 앞 목록을 먼저 보여 주고 새로 받는다.
 export function PastProblems({ onBack }: { onBack: () => void }) {
   const past = useQuery(pastAttemptsQuery);
   const [filter, setFilter] = useState<PastFilter>("전체");

@@ -215,7 +215,7 @@ export function QuestionPanel({
     );
     clearTimeout(slow);
     // 서버는 답을 만들기 전에 질문의 개념을 나눠 저장하므로 퀴즈 홈 맞춤 여부가 바뀌었을 수 있다.
-    // 답이 끊기거나 실패하면 서버가 아직 개념을 저장하는 중일 수 있어, 바로 받지 않고 다음에 열 때 받는다.
+    // 답이 끊기거나 실패하면 서버가 아직 개념을 저장하는 중일 수 있어, 바로 받은 뒤 퀴즈 홈을 다음에 열 때 한 번 더 받게 한다.
     void refreshQuizHome(queryClient, askedUnitId, result.ok);
     if (result.ok) {
       update(question.id, () => ({ ...question, status: "answered", answer: result.answer }));
