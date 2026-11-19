@@ -33,16 +33,15 @@ function stubSlowFetch(bodies: unknown[]) {
   return fetchMock;
 }
 
-function watch<T>(client: QueryClient, options: { queryKey: readonly unknown[]; queryFn: () => Promise<T> }) {
-  const observer = new QueryObserver(client, options);
-  const unsubscribe = observer.subscribe(() => {});
-  return { observer, unsubscribe };
+// 화면이 쿼리를 열어 둔 것처럼 구독한다.
+function watch<T>(observer: QueryObserver<T, Error, T, T, string[]>) {
+  return { observer, unsubscribe: observer.subscribe(() => {}) };
 }
 
 it("TC-346 퀴즈 홈을 처음 받는 중에 질문의 답이 끊기거나 실패해도 퀴즈 홈이 로딩에 멈추지 않고, 다음에 열 때 한 번 더 받아요", async () => {
   const fetchMock = stubSlowFetch([{ personalized: false }, { personalized: false }, { personalized: true }]);
   const client = new QueryClient();
-  const opened = watch(client, quizHomeQuery("unit-1"));
+  const opened = watch(new QueryObserver(client, quizHomeQuery("unit-1")));
   expect(opened.observer.getCurrentResult().isFetching).toBe(true);
 
   await refreshQuizHome(client, "unit-1", false);
@@ -51,7 +50,7 @@ it("TC-346 퀴즈 홈을 처음 받는 중에 질문의 답이 끊기거나 실�
   expect(opened.observer.getCurrentResult().data).toBe(false);
   opened.unsubscribe();
 
-  const reopened = watch(client, quizHomeQuery("unit-1"));
+  const reopened = watch(new QueryObserver(client, quizHomeQuery("unit-1")));
   await vi.waitFor(() => expect(reopened.observer.getCurrentResult().data).toBe(true));
   expect(fetchMock).toHaveBeenCalledTimes(3);
   reopened.unsubscribe();
@@ -61,7 +60,7 @@ it("TC-346 퀴즈 홈을 처음 받는 중에 질문의 답이 끊기거나 실�
 it("TC-347 지난 문제 목록을 처음 받는 중에 채점이 끝나면 방금 푼 문제가 있는 목록을 보여 줘요", async () => {
   stubSlowFetch([[], [{ id: "graded" }]]);
   const client = new QueryClient();
-  const opened = watch(client, pastAttemptsQuery);
+  const opened = watch(new QueryObserver(client, pastAttemptsQuery));
   expect(opened.observer.getCurrentResult().isFetching).toBe(true);
 
   await refreshPastAttempts(client);
